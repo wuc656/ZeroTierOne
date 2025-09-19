@@ -100,8 +100,16 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 target_link_libraries(ZeroTierOneJNI PRIVATE nlohmann_json::nlohmann_json)
 
+set(prometheus-cpp_DIR "${CMAKE_SOURCE_DIR}/../prometheus-install/lib/cmake/prometheus-cpp")
+
 find_package(prometheus-cpp CONFIG REQUIRED)
-target_link_libraries(ZeroTierOneJNI PRIVATE prometheus-cpp::core)
+
+target_link_libraries(ZeroTierOneJNI
+    PRIVATE
+      nlohmann_json::nlohmann_json
+      prometheus-cpp::core
+)
+
 
 
 
