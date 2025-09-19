@@ -91,6 +91,11 @@ endif()
 target_link_libraries(${PROJECT_NAME} ${link_libs})
 set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(ENABLE_PULL OFF CACHE BOOL "" FORCE)
+set(ENABLE_PUSH OFF CACHE BOOL "" FORCE)
+set(ENABLE_COMPRESSION OFF CACHE BOOL "" FORCE)
+set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+
 include(FetchContent)
 FetchContent_Declare(
   nlohmann_json
