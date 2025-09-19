@@ -26,12 +26,12 @@ if(APPLE)
 endif()
 
 set(src_files
-    ../ext/lz4/lz4.c
-    ../ext/json-parser/json.c
+    # ../ext/lz4/lz4.c
+    # ../ext/json-parser/json.c
     ../ext/http-parser/http_parser.c
-    ../node/C25519.cpp
+    # ../node/C25519.cpp
     ../node/CertificateOfMembership.cpp
-    ../node/Defaults.cpp
+    # ../node/Defaults.cpp
     ../node/Dictionary.cpp
     ../node/Identity.cpp
     ../node/IncomingPacket.cpp
