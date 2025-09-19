@@ -89,7 +89,8 @@ if(WIN32)
 endif()
 
 target_link_libraries(${PROJECT_NAME} ${link_libs})
-
+set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 include(FetchContent)
 FetchContent_Declare(
   nlohmann_json
@@ -114,5 +115,3 @@ FetchContent_MakeAvailable(prometheus-cpp)
 target_link_libraries(ZeroTierOneJNI
     PRIVATE prometheus-cpp::core
 )
-set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
