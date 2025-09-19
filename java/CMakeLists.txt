@@ -32,7 +32,7 @@ set(src_files
     # ../node/C25519.cpp
     ../node/CertificateOfMembership.cpp
     # ../node/Defaults.cpp
-    ../node/Dictionary.cpp
+    # ../node/Dictionary.cpp
     ../node/Identity.cpp
     ../node/IncomingPacket.cpp
     ../node/InetAddress.cpp
