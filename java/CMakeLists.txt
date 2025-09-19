@@ -24,7 +24,12 @@ if(APPLE)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -arch i386 -arch x86_64 -Wall -O3 -flto -fPIE -fvectorize -fstack-protector -mmacosx-version-min=10.7 -Wno-unused-private-field")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CMAKE_C_FLAGS} -fno-rtti")
 endif()
-
+file(GLOB ZT_NODE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../node/*.cpp)
+set(ZT_OSDEP_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/../osdep/AndroidEthernetTap.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../osdep/OSUtils.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../osdep/Http.cpp
+)
 set(src_files
     # ../ext/lz4/lz4.c
     # ../ext/json-parser/json.c
