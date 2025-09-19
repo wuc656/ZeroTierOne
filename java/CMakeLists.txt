@@ -114,14 +114,14 @@ target_link_libraries(${PROJECT_NAME} ${link_libs})
 include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}/../../ext/prometheus-cpp-lite-1.0/core/include
   ${CMAKE_CURRENT_SOURCE_DIR}/../../ext/prometheus-cpp-lite-1.0/simpleapi/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../ext/nlohmann
 )
-
-# include_directories(
-#   ${CMAKE_SOURCE_DIR}/../ext/prometheus-cpp-lite-1.0/core/include
-#   ${CMAKE_SOURCE_DIR}/../ext/prometheus-cpp-lite-1.0/simpleapi/include
-#   ${CMAKE_SOURCE_DIR}/../ext/nlohmann
-# )
+include_directories(
+  ${CMAKE_SOURCE_DIR}/../ext/prometheus-cpp-lite-1.0/core/include
+  ${CMAKE_SOURCE_DIR}/../ext/prometheus-cpp-lite-1.0/simpleapi/include
+)
+target_include_directories(${PROJECT_NAME} PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../ext/nlohmann
+)
 find_library(ANDROID_LOG_LIB log)
 target_link_libraries(${PROJECT_NAME} PRIVATE ${ANDROID_LOG_LIB})
 
