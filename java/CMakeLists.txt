@@ -100,23 +100,8 @@ FetchContent_MakeAvailable(nlohmann_json)
 
 target_link_libraries(ZeroTierOneJNI PRIVATE nlohmann_json::nlohmann_json)
 
-include(FetchContent)
-FetchContent_Declare(
-  prometheus-cpp
-  GIT_REPOSITORY https://github.com/jupp0r/prometheus-cpp.git
-  GIT_TAG v1.3.0
-)
-set(ENABLE_PUSH OFF CACHE BOOL "" FORCE)
-set(ENABLE_PULL OFF CACHE BOOL "" FORCE)
-set(ENABLE_COMPRESSION OFF CACHE BOOL "" FORCE)
-set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(prometheus-cpp)
-
+find_package(prometheus-cpp CONFIG REQUIRED)
 target_link_libraries(ZeroTierOneJNI PRIVATE prometheus-cpp::core)
-target_include_directories(ZeroTierOneJNI
-    PRIVATE
-      ${prometheus-cpp_SOURCE_DIR}/core/include
-      ${prometheus-cpp_BINARY_DIR}/core/include
-)
+
 
 
