@@ -112,7 +112,6 @@ FetchContent_MakeAvailable(nlohmann_json)
 target_link_libraries(ZeroTierOneJNI PRIVATE nlohmann_json::nlohmann_json)
 
 include_directories(
-  ${CMAKE_SOURCE_DIR}/ext/prometheus-cpp-lite-1.0/core/include
   ${CMAKE_SOURCE_DIR}/ext/prometheus-cpp-lite-1.0/simpleapi/include
 )
 include_directories(
