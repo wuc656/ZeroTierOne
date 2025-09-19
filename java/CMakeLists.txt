@@ -104,6 +104,16 @@ include_directories(
   ${CMAKE_SOURCE_DIR}/ext/prometheus-cpp-lite-1.0/core/include
   ${CMAKE_SOURCE_DIR}/ext/prometheus-cpp-lite-1.0/simpleapi/include
 )
+include_directories(
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../ext/prometheus-cpp-lite-1.0/core/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../../ext/prometheus-cpp-lite-1.0/simpleapi/include
+)
+
+include_directories(
+  ${CMAKE_SOURCE_DIR}/../ext/prometheus-cpp-lite-1.0/core/include
+  ${CMAKE_SOURCE_DIR}/../ext/prometheus-cpp-lite-1.0/simpleapi/include
+)
+
 
 
 
