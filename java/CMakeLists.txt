@@ -89,12 +89,6 @@ if(WIN32)
 endif()
 
 target_link_libraries(${PROJECT_NAME} ${link_libs})
-set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-set(ENABLE_PULL OFF CACHE BOOL "" FORCE)
-set(ENABLE_PUSH OFF CACHE BOOL "" FORCE)
-set(ENABLE_COMPRESSION OFF CACHE BOOL "" FORCE)
-set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -113,8 +107,10 @@ FetchContent_Declare(
   GIT_REPOSITORY https://github.com/jupp0r/prometheus-cpp.git
   GIT_TAG v1.3.0
 )
-set(ENABLE_PUSH OFF CACHE BOOL "disable push" FORCE)
-set(ENABLE_COMPRESSION OFF CACHE BOOL "disable zlib" FORCE)
+set(ENABLE_PUSH OFF CACHE BOOL "" FORCE)
+set(ENABLE_PULL OFF CACHE BOOL "" FORCE)
+set(ENABLE_COMPRESSION OFF CACHE BOOL "" FORCE)
+set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(prometheus-cpp)
 
 target_link_libraries(ZeroTierOneJNI
