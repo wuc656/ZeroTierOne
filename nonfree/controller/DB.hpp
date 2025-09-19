@@ -17,9 +17,7 @@
 #include <map>
 #include <memory>
 #include <nlohmann/json.hpp>
-#ifndef ZT_NO_PROMETHEUS
 #include <prometheus/simpleapi.h>
-#endif
 #include <set>
 #include <shared_mutex>
 #include <string>
