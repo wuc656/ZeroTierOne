@@ -113,4 +113,8 @@ set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(prometheus-cpp)
 
 target_link_libraries(ZeroTierOneJNI PRIVATE prometheus-cpp::core)
-
+target_include_directories(ZeroTierOneJNI
+    PRIVATE
+      ${prometheus-cpp_SOURCE_DIR}/core/include
+      ${prometheus-cpp_BINARY_DIR}/core/include
+)
