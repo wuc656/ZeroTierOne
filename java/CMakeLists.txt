@@ -71,7 +71,16 @@ endif()
 include_directories(
     ${include_dirs}
     )
-
+file(GLOB ZT_NODE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../node/*.cpp)
+file(GLOB ZT_OSDEP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../osdep/*.cpp)
+set(src_files
+    ../ext/http-parser/http_parser.c
+    ${ZT_NODE_SOURCES}
+    ${ZT_OSDEP_SOURCES}
+    jni/com_zerotierone_sdk_Node.cpp
+    jni/ZT_jniutils.cpp
+    jni/ZT_jnicache.cpp
+)
 add_library(${PROJECT_NAME} SHARED ${src_files})
 
 if(APPLE)
@@ -113,6 +122,8 @@ include_directories(
   ${CMAKE_SOURCE_DIR}/../ext/prometheus-cpp-lite-1.0/core/include
   ${CMAKE_SOURCE_DIR}/../ext/prometheus-cpp-lite-1.0/simpleapi/include
 )
+find_library(ANDROID_LOG_LIB log)
+target_link_libraries(${PROJECT_NAME} PRIVATE ${ANDROID_LOG_LIB})
 
 
 
