@@ -89,3 +89,28 @@ if(WIN32)
 endif()
 
 target_link_libraries(${PROJECT_NAME} ${link_libs})
+
+include(FetchContent)
+FetchContent_Declare(
+  nlohmann_json
+  GIT_REPOSITORY https://github.com/nlohmann/json.git
+  GIT_TAG v3.12
+)
+FetchContent_MakeAvailable(nlohmann_json)
+
+target_link_libraries(ZeroTierOneJNI PRIVATE nlohmann_json::nlohmann_json)
+
+include(FetchContent)
+
+FetchContent_Declare(
+  prometheus-cpp
+  GIT_REPOSITORY https://github.com/jupp0r/prometheus-cpp.git
+  GIT_TAG v1.3.0
+)
+set(ENABLE_PUSH OFF CACHE BOOL "disable push" FORCE)
+set(ENABLE_COMPRESSION OFF CACHE BOOL "disable zlib" FORCE)
+FetchContent_MakeAvailable(prometheus-cpp)
+
+target_link_libraries(ZeroTierOneJNI
+    PRIVATE prometheus-cpp::core
+)
