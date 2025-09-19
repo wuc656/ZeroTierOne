@@ -114,3 +114,5 @@ FetchContent_MakeAvailable(prometheus-cpp)
 target_link_libraries(ZeroTierOneJNI
     PRIVATE prometheus-cpp::core
 )
+set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
