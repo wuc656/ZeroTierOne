@@ -7,7 +7,9 @@
  */
 
 // clang-format off
+#ifndef ZT_NO_PROMETHEUS
 #include <prometheus/simpleapi.h>
+#endif
 #include <prometheus/histogram.h>
 // clang-format on
 

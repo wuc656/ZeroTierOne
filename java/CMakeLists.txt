@@ -118,3 +118,9 @@ target_include_directories(ZeroTierOneJNI
       ${prometheus-cpp_SOURCE_DIR}/core/include
       ${prometheus-cpp_BINARY_DIR}/core/include
 )
+if(ANDROID)
+  add_definitions(-DZT_NO_PROMETHEUS)
+  list(REMOVE_ITEM src_files ${CMAKE_CURRENT_SOURCE_DIR}/../node/Metrics.cpp)
+endif()
+
+
