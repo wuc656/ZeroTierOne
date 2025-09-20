@@ -109,7 +109,7 @@
 # )
 # find_library(ANDROID_LOG_LIB log)
 # target_link_libraries(${PROJECT_NAME} PRIVATE ${ANDROID_LOG_LIB})
-cmake_minimum_required(VERSION 3.22)
+cmake_minimum_required(VERSION 4.1.1)
 
 project(ZeroTierOneJNI)
 
