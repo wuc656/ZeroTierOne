@@ -2,14 +2,14 @@ name: Build ZeroTier MSI (Win7/2008R2 x64)
 
 on:
   push:
-    branches: [ dev ]   # ZeroTierOne 預設分支是 dev
+    branches: [ dev ]
   pull_request:
     branches: [ dev ]
-  workflow_dispatch:     # 支援手動觸發
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: windows-2019   # 使用 VS2019 (v142 toolset)
+    runs-on: windows-2019
 
     env:
       WINVER: 0x0601
@@ -29,33 +29,76 @@ jobs:
       - name: Install CMake
         uses: lukka/get-cmake@latest
 
+      - name: Show environment
+        shell: pwsh
+        run: |
+          Write-Host "Generator: $env:CMAKE_GENERATOR"
+          Write-Host "Toolset: $env:MSVC_TOOLSET"
+          Write-Host "Arch: $env:ARCH"
+          Write-Host "Config: $env:CONFIGURATION"
+          Write-Host "WINVER: $env:WINVER"
+          Write-Host "_WIN32_WINNT: $env:WIN32_WINNT"
+
       - name: Configure (CMake → VS2019 solution)
         shell: pwsh
-        run: cmake -S . -B build -G "${{ env.CMAKE_GENERATOR }}" -A ${{ env.ARCH }} -T ${{ env.MSVC_TOOLSET }} -DWINVER=${{ env.WINVER }} -D_WIN32_WINNT=${{ env.WIN32_WINNT }} -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        run: >
+          cmake -S . -B build
+          -G "$env:CMAKE_GENERATOR"
+          -A $env:ARCH
+          -T $env:MSVC_TOOLSET
+          -DWINVER=$env:WINVER
+          -D_WIN32_WINNT=$env:WIN32_WINNT
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          -DCMAKE_C_FLAGS="/DWINVER=$env:WINVER /D_WIN32_WINNT=$env:WIN32_WINNT"
+          -DCMAKE_CXX_FLAGS="/DWINVER=$env:WINVER /D_WIN32_WINNT=$env:WIN32_WINNT"
 
-      - name: Build Solution
+      - name: Build (cmake --build)
         shell: pwsh
-        run: msbuild build/ZeroTierOne.sln /p:Configuration=${{ env.CONFIGURATION }} /m
+        run: cmake --build build --config $env:CONFIGURATION --parallel
 
-      - name: Install WiX Toolset
+      - name: Install WiX 3.11.2
         shell: pwsh
-        run: choco install wix --version=3.11.2 -y
+        run: |
+          choco install wix --version=3.11.2 -y
+          $wixBin = 'C:\Program Files (x86)\WiX Toolset v3.11\bin'
+          if (Test-Path $wixBin) { echo $wixBin >> $env:GITHUB_PATH } else { Write-Error "WiX bin not found at $wixBin" }
+
+      - name: Locate built executable
+        id: locate
+        shell: pwsh
+        run: |
+          $conf = $env:CONFIGURATION
+          $candidates = @(
+            "build\$conf\zerotier-one.exe",
+            "build\$conf\ZeroTierOne.exe",
+            "build\zerotier-one\$conf\zerotier-one.exe",
+            "build\bin\$conf\zerotier-one.exe"
+          )
+          $found = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $found) {
+            Write-Error "Executable not found. Checked: $($candidates -join ', ')"
+          } else {
+            Write-Host "Found exe: $found"
+            echo "exe_path=$found" >> $env:GITHUB_OUTPUT
+          }
 
       - name: Generate minimal WiX installer.wxs
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path installer | Out-Null
+          $exe = "${{ steps.locate.outputs.exe_path }}"
+          if (-not $exe) { Write-Error "Missing exe path from previous step." }
           @"
 <?xml version='1.0' encoding='UTF-8'?>
 <Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
-  <Product Id='*' Name='ZeroTierOne' Language='1033' Version='1.0.0.0' Manufacturer='YourOrg' UpgradeCode='PUT-GUID-HERE'>
+  <Product Id='*' Name='ZeroTierOne' Language='1033' Version='1.0.0.0' Manufacturer='YourOrg' UpgradeCode='11111111-2222-3333-4444-555555555555'>
     <Package InstallerVersion='200' Compressed='yes' InstallScope='perMachine' />
     <MediaTemplate />
     <Directory Id='TARGETDIR' Name='SourceDir'>
-      <Directory Id='ProgramFilesFolder'>
+      <Directory Id='ProgramFiles64Folder'>
         <Directory Id='INSTALLFOLDER' Name='ZeroTierOne'>
-          <Component Id='MainExe' Guid='PUT-GUID-HERE'>
-            <File Id='ZeroTierExe' Source='build\\Release\\zerotier-one.exe' KeyPath='yes' />
+          <Component Id='MainExe' Guid='aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'>
+            <File Id='ZeroTierExe' Source='$exe' KeyPath='yes' />
           </Component>
         </Directory>
       </Directory>
@@ -67,16 +110,17 @@ jobs:
 </Wix>
 "@ | Set-Content -Path installer\installer.wxs -Encoding UTF8
 
-      - name: Package MSI
+      - name: Package MSI (candle + light)
         shell: pwsh
+        working-directory: installer
         run: |
-          candle installer\installer.wxs
-          light installer\installer.wixobj -o ZeroTierOne-x64.msi
+          candle installer.wxs
+          light installer.wixobj -o ZeroTierOne-x64.msi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ZeroTierOne-x64
+          name: ZeroTierOne-x64-${{ env.CONFIGURATION }}
           path: |
-            build/Release/zerotier-one.exe
-            ZeroTierOne-x64.msi
+            ${{ steps.locate.outputs.exe_path }}
+            installer/ZeroTierOne-x64.msi
