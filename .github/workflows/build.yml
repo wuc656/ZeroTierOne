@@ -47,7 +47,7 @@ jobs:
           $vcpkgInc = "C:\vcpkg\installed\x64-windows\include"
 
           if (!(Test-Path $promBase)) {
-            Write-Warning "Prometheus simpleapi include base not found: $promBase"
+            Write-Warning "Prometheus include base not found: $promBase"
           } elseif (!(Test-Path (Join-Path $promBase "prometheus\simpleapi.h"))) {
             Write-Warning "prometheus/simpleapi.h not found under $promBase"
           }
@@ -64,6 +64,7 @@ jobs:
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vsPath) { throw "vswhere did not return installationPath" }
           $devCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
           "VSCMD=$devCmd" | Out-File -FilePath $env:GITHUB_ENV -Append
 
@@ -80,47 +81,63 @@ jobs:
             -DCMAKE_CXX_FLAGS="/std:c++17 /Zc:__cplusplus /permissive- /EHsc" ^
             -DWINVER=0x0601 -D_WIN32_WINNT=0x0601 -DZT_ENABLE_PROMETHEUS=ON
 
-      - name: Patch vcxproj AdditionalIncludeDirectories
+      - name: Patch vcxproj AdditionalIncludeDirectories (safe)
         shell: pwsh
         run: |
           $vcx = "build\zerotiercore.vcxproj"
           if (!(Test-Path $vcx)) { throw "vcxproj not found: $vcx" }
 
           [xml]$x = Get-Content $vcx
-          $promBase  = $env:PROM_BASE
-          $vcpkgInc  = $env:VCPKG_INCLUDE
 
-          $newInc = @()
-          if ($promBase) { $newInc += $promBase }
-          if ($vcpkgInc) { $newInc += $vcpkgInc }
-          $newIncStr = ($newInc -join ';')
+          $promBase = $env:PROM_BASE
+          $vcpkgInc = $env:VCPKG_INCLUDE
+
+          # 組合要加入的 include 字串（過濾空值）
+          $incs = @()
+          if ($promBase -and (Test-Path $promBase)) { $incs += $promBase }
+          if ($vcpkgInc -and (Test-Path $vcpkgInc)) { $incs += $vcpkgInc }
+          $newIncStr = ($incs -join ';')
 
           if (-not $newIncStr) {
-            Write-Warning "No include bases resolved; skipping vcxproj patch."
+            Write-Warning "No valid include paths resolved; skipping vcxproj patch."
           } else {
-            $ids = $x.Project.ItemDefinitionGroup
-            foreach ($id in $ids) {
+            # 取得 namespace（處理有無 default namespace）
+            $ns = $x.Project.NamespaceURI
+            # 針對每個 ItemDefinitionGroup 裡的 ClCompile 做修改或新增節點
+            $modified = $false
+            foreach ($id in $x.Project.ItemDefinitionGroup) {
               if ($id.ClCompile) {
-                $cur = $id.ClCompile.AdditionalIncludeDirectories
-                if ($cur) {
-                  $cur.InnerText = "$newIncStr;%(AdditionalIncludeDirectories)"
+                # AdditionalIncludeDirectories
+                $aid = $id.ClCompile.AdditionalIncludeDirectories
+                if ($aid -and $aid.InnerText) {
+                  # 已存在則 prepend（保留原有 %(AdditionalIncludeDirectories)）
+                  $aid.InnerText = "$newIncStr;%(AdditionalIncludeDirectories)"
                 } else {
-                  $n = $x.CreateElement("AdditionalIncludeDirectories", $x.Project.NamespaceURI)
+                  $n = $x.CreateElement("AdditionalIncludeDirectories", $ns)
                   $n.InnerText = "$newIncStr;%(AdditionalIncludeDirectories)"
                   $id.ClCompile.AppendChild($n) | Out-Null
                 }
-                # Also enforce exception handling to silence C4530
-                if ($id.ClCompile.ExceptionHandling) {
-                  $id.ClCompile.ExceptionHandling.InnerText = "Sync"
-                } else {
-                  $eh = $x.CreateElement("ExceptionHandling", $x.Project.NamespaceURI)
+
+                # ExceptionHandling -> 設為 Sync（若已有則覆寫，若無則新增）
+                $eh = $id.ClCompile.ExceptionHandling
+                if ($eh -and $eh.InnerText) {
                   $eh.InnerText = "Sync"
-                  $id.ClCompile.AppendChild($eh) | Out-Null
+                } else {
+                  $ehNew = $x.CreateElement("ExceptionHandling", $ns)
+                  $ehNew.InnerText = "Sync"
+                  $id.ClCompile.AppendChild($ehNew) | Out-Null
                 }
+
+                $modified = $true
               }
             }
-            $x.Save($vcx)
-            Write-Host "Patched AdditionalIncludeDirectories with: $newIncStr"
+
+            if ($modified) {
+              $x.Save($vcx)
+              Write-Host "Patched vcxproj AdditionalIncludeDirectories with: $newIncStr"
+            } else {
+              Write-Warning "No ClCompile nodes found to patch in $vcx"
+            }
           }
 
       - name: Build (cmake --build via DevCmd)
