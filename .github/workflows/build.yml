@@ -33,28 +33,25 @@ jobs:
           git clone https://github.com/microsoft/vcpkg $env:VCPKG_ROOT
           & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat"
 
-      - name: Install dependencies via vcpkg (official Windows set)
+      - name: Install dependencies via vcpkg
         shell: pwsh
         run: |
           & "$env:VCPKG_ROOT\vcpkg.exe" install nlohmann-json:$env:VCPKG_DEFAULT_TRIPLET
-          # Prometheus 在 Windows 官方構建預設為 OFF，因此不強求安裝 (避免 simpleapi.h 差異)
-          # 如需啟用，請先確認 ZeroTier 的 CMake 選項與標頭名稱一致，再加回：
-          # & "$env:VCPKG_ROOT\vcpkg.exe" install prometheus-cpp:$env:VCPKG_DEFAULT_TRIPLET
           $prefix = "C:\vcpkg\installed\x64-windows"
           if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { throw "nlohmann/json.hpp missing at $prefix\include\nlohmann" }
 
-      - name: Persist MSVC INCLUDE/LIB across steps (critical)
+      - name: Persist MSVC INCLUDE/LIB across steps (critical fix)
         shell: pwsh
         run: |
           $prefix = "C:\vcpkg\installed\x64-windows"
           Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$prefix\include;$env:INCLUDE"
           Add-Content -Path $env:GITHUB_ENV -Value "LIB=$prefix\lib;$env:LIB"
 
-      - name: Configure (CMake → VS2019 solution, robust include flags, align official Windows options)
+      - name: Configure (CMake → VS2019 solution, robust include flags, hard-disable metrics)
         shell: pwsh
         run: |
           $prefix = "C:/vcpkg/installed/x64-windows"
-          $inc = "/I `"$prefix/include`" /EHsc /D NOMINMAX"
+          $inc = "/I `"$prefix/include`" /EHsc /D NOMINMAX /D ZT_ENABLE_PROMETHEUS=0 /D ZT_ENABLE_METRICS=0 /D ZT_PROMETHEUS=0"
           cmake -S . -B build -G "Visual Studio 16 2019" -A $env:ARCH -T v142 `
             -DWINVER=$env:WINVER -D_WIN32_WINNT=$env:WIN32_WINNT `
             -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
@@ -63,7 +60,6 @@ jobs:
             -DCMAKE_INCLUDE_PATH=$prefix/include `
             -DCMAKE_LIBRARY_PATH=$prefix/lib `
             -DCMAKE_CXX_STANDARD=17 `
-            -DZT_ENABLE_PROMETHEUS=OFF `
             -DCMAKE_C_FLAGS="$inc" `
             -DCMAKE_CXX_FLAGS="$inc" `
             -DCMAKE_C_FLAGS_RELEASE="$inc" `
