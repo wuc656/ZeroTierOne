@@ -36,15 +36,13 @@ jobs:
         run: |
           git clone https://github.com/microsoft/vcpkg $env:VCPKG_ROOT
           & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat"
-          # Export triplet for consistency
           [Environment]::SetEnvironmentVariable('VCPKG_DEFAULT_TRIPLET', $env:VCPKG_DEFAULT_TRIPLET, 'Process')
 
       - name: Install dependencies via vcpkg
         shell: pwsh
         run: |
           & "$env:VCPKG_ROOT\vcpkg.exe" install nlohmann-json:$env:VCPKG_DEFAULT_TRIPLET
-          # If you need metrics, uncomment the next line; otherwise we disable prometheus in CMake below
-          # & "$env:VCPKG_ROOT\vcpkg.exe" install prometheus-cpp:$env:VCPKG_DEFAULT_TRIPLET
+          & "$env:VCPKG_ROOT\vcpkg.exe" install prometheus-cpp:$env:VCPKG_DEFAULT_TRIPLET
 
       - name: Configure (CMake → VS2019 solution)
         shell: pwsh
@@ -53,8 +51,7 @@ jobs:
             -DWINVER=$env:WINVER -D_WIN32_WINNT=$env:WIN32_WINNT `
             -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
             -DCMAKE_CXX_STANDARD=17 `
-            -DCMAKE_CXX_FLAGS="/D NOMINMAX" `
-            -DZT_ENABLE_PROMETHEUS=OFF
+            -DCMAKE_CXX_FLAGS="/EHsc /D NOMINMAX"
 
       - name: Build (cmake --build)
         shell: pwsh
