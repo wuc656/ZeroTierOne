@@ -39,6 +39,7 @@ jobs:
           $prefix = "C:\vcpkg\installed\x64-windows"
           if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { Write-Warning "nlohmann/json.hpp missing" }
           if (!(Test-Path "$prefix\include\prometheus")) { Write-Warning "prometheus headers missing from vcpkg" }
+          Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_PREFIX=$prefix"
 
       - name: Prepare include/library paths
         shell: pwsh
@@ -46,10 +47,9 @@ jobs:
           $prefix   = "C:\vcpkg\installed\x64-windows"
           $promBase = Join-Path "${{ github.workspace }}" "ext\prometheus-cpp-lite-1.0\simpleapi\include"
 
+          Add-Content -Path $env:GITHUB_ENV -Value "PROM_BASE=$promBase"
           Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$promBase;$prefix\include;$env:INCLUDE"
           Add-Content -Path $env:GITHUB_ENV -Value "LIB=$prefix\lib;$env:LIB"
-          Add-Content -Path $env:GITHUB_ENV -Value "PROM_BASE=$promBase"
-          Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_PREFIX=$prefix"
 
       - name: Locate Visual Studio and DevCmd
         shell: pwsh
@@ -66,7 +66,7 @@ jobs:
           set PREFIX=%VCPKG_PREFIX% && ^
           set PROMBASE=%PROM_BASE% && ^
           set EXTRA_C_FLAGS=/EHsc && ^
-          set EXTRA_CXX_FLAGS=/std:c++17 /Zc:__cplusplus /permissive- /EHsc && ^
+          set EXTRA_CXX_FLAGS=/std:c++17 /Zc:__cplusplus /permissive- /EHsc /I%PROMBASE% /I%PREFIX%\include && ^
           set VS_GLOBALS=IncludePath=%PROMBASE%;%PREFIX%\include;%%(IncludePath);LibraryPath=%PREFIX%\lib;%%(LibraryPath) && ^
           cmake -S . -B build -G "Visual Studio 16 2019" -A %ARCH% -T v142 ^
             -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake ^
@@ -81,7 +81,8 @@ jobs:
             -DZT_ENABLE_PROMETHEUS=ON ^
             -DCMAKE_C_FLAGS="%EXTRA_C_FLAGS%" ^
             -DCMAKE_CXX_FLAGS="%EXTRA_CXX_FLAGS%" ^
-            -DCMAKE_VS_GLOBALS="%VS_GLOBALS%"
+            -DCMAKE_VS_GLOBALS="%VS_GLOBALS%" ^
+            -DCMAKE_INCLUDE_PATH="%PROMBASE%;%PREFIX%\include"
 
       - name: Build (cmake --build via DevCmd)
         shell: cmd
