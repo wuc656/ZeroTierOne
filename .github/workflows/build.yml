@@ -1,4 +1,4 @@
-name: Build ZeroTier MSI (Win7/2008R2 x64, Prometheus enabled, DevCmd fixed path)
+name: Build ZeroTier MSI (Win7/2008R2 x64, Prometheus enabled, DevCmd fixed include)
 
 on:
   workflow_dispatch:
@@ -45,10 +45,6 @@ jobs:
         run: |
           $prefix   = "C:\vcpkg\installed\x64-windows"
           $promBase = Join-Path "${{ github.workspace }}" "ext\prometheus-cpp-lite-1.0\simpleapi\include"
-
-          if (!(Test-Path (Join-Path $promBase "prometheus\simpleapi.h"))) {
-            Write-Warning "prometheus/simpleapi.h not found at $promBase, build may fail"
-          }
 
           Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$promBase;$prefix\include;$env:INCLUDE"
           Add-Content -Path $env:GITHUB_ENV -Value "LIB=$prefix\lib;$env:LIB"
