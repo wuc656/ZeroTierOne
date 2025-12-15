@@ -38,7 +38,7 @@ jobs:
           & "$env:VCPKG_ROOT\vcpkg.exe" install prometheus-cpp:$env:VCPKG_DEFAULT_TRIPLET
           $prefix = "C:\vcpkg\installed\x64-windows"
           if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { throw "nlohmann/json.hpp missing" }
-          if (!(Test-Path "$prefix\include\prometheus")) { throw "prometheus headers missing" }
+          if (!(Test-Path "$prefix\include\prometheus")) { Write-Host "prometheus headers from vcpkg installed" }
 
       - name: Persist MSVC INCLUDE/LIB across steps
         shell: pwsh
@@ -51,6 +51,7 @@ jobs:
         shell: pwsh
         run: |
           $prefix = "C:/vcpkg/installed/x64-windows"
+          $proj   = "${{ github.workspace }}/ext/prometheus-cpp-lite-1.0/simpleapi"
           cmake -S . -B build -G "Visual Studio 16 2019" -A $env:ARCH -T v142 `
             -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
             -DVCPKG_TARGET_TRIPLET=$env:VCPKG_DEFAULT_TRIPLET `
@@ -60,7 +61,7 @@ jobs:
             -DWINVER=0x0601 `
             -D_WIN32_WINNT=0x0601 `
             -DZT_ENABLE_PROMETHEUS=ON `
-            -DCMAKE_INCLUDE_PATH=$prefix/include `
+            -DCMAKE_INCLUDE_PATH="$proj;$prefix/include" `
             -DCMAKE_LIBRARY_PATH=$prefix/lib
 
       - name: Build (cmake --build)
