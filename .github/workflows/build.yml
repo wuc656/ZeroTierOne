@@ -46,7 +46,8 @@ jobs:
         shell: pwsh
         run: cmake -S . -B build -G "Visual Studio 16 2019" -A $env:ARCH -T v142 `
           -DWINVER=$env:WINVER -D_WIN32_WINNT=$env:WIN32_WINNT `
-          -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+          -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
+          -DCMAKE_CXX_STANDARD=17
 
       - name: Build (cmake --build)
         shell: pwsh
