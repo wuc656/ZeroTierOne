@@ -31,7 +31,7 @@ jobs:
 
       - name: Configure (CMake → VS2019 solution)
         shell: pwsh
-        run: cmake -S . -B build -G "Visual Studio 16 2019" -A $env:ARCH -T v142 -DWINVER=$env:WINVER -D_WIN32_WINNT=$env:WIN32_WINNT -DCMAKE_POLICY_VERSION_MINIMUM=3.5.0
+        run: cmake -S . -B build -G "Visual Studio 16 2019" -A $env:ARCH -T v142 -DWINVER=$env:WINVER -D_WIN32_WINNT=$env:WIN32_WINNT
 
       - name: Build (cmake --build)
         shell: pwsh
