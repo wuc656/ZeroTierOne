@@ -33,7 +33,7 @@ jobs:
           git clone https://github.com/microsoft/vcpkg $env:VCPKG_ROOT
           & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat"
 
-      - name: Install dependencies via vcpkg (json + prometheus + transitive)
+      - name: Install dependencies via vcpkg
         shell: pwsh
         run: |
           & "$env:VCPKG_ROOT\vcpkg.exe" install nlohmann-json:$env:VCPKG_DEFAULT_TRIPLET
@@ -41,12 +41,8 @@ jobs:
           & "$env:VCPKG_ROOT\vcpkg.exe" install curl[ssl]:$env:VCPKG_DEFAULT_TRIPLET
           & "$env:VCPKG_ROOT\vcpkg.exe" install openssl:$env:VCPKG_DEFAULT_TRIPLET
           & "$env:VCPKG_ROOT\vcpkg.exe" install zlib:$env:VCPKG_DEFAULT_TRIPLET
-          # 檢查關鍵標頭是否存在
-          $prefix = "C:\vcpkg\installed\x64-windows"
-          if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { throw "nlohmann/json.hpp not found at $prefix\include\nlohmann" }
-          if (!(Test-Path "$prefix\include\prometheus\simpleapi.h")) { throw "prometheus/simpleapi.h not found at $prefix\include\prometheus" }
 
-      - name: Persist MSVC INCLUDE/LIB across steps (critical fix)
+      - name: Persist INCLUDE/LIB for MSVC (關鍵修正)
         shell: pwsh
         run: |
           $prefix = "C:\vcpkg\installed\x64-windows"
