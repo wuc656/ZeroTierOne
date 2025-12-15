@@ -37,8 +37,6 @@ jobs:
           & "$env:VCPKG_ROOT\vcpkg.exe" install nlohmann-json:$env:VCPKG_DEFAULT_TRIPLET
           & "$env:VCPKG_ROOT\vcpkg.exe" install prometheus-cpp:$env:VCPKG_DEFAULT_TRIPLET
           $prefix = "C:\vcpkg\installed\x64-windows"
-          if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { Write-Warning "nlohmann/json.hpp missing" }
-          if (!(Test-Path "$prefix\include\prometheus")) { Write-Warning "prometheus headers missing from vcpkg" }
           Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_PREFIX=$prefix"
 
       - name: Prepare include/library paths
@@ -81,8 +79,7 @@ jobs:
             -DZT_ENABLE_PROMETHEUS=ON ^
             -DCMAKE_C_FLAGS="%EXTRA_C_FLAGS%" ^
             -DCMAKE_CXX_FLAGS="%EXTRA_CXX_FLAGS%" ^
-            -DCMAKE_VS_GLOBALS="%VS_GLOBALS%" ^
-            -DCMAKE_INCLUDE_PATH="%PROMBASE%;%PREFIX%\include"
+            -DCMAKE_VS_GLOBALS="%VS_GLOBALS%"
 
       - name: Build (cmake --build via DevCmd)
         shell: cmd
@@ -97,7 +94,6 @@ jobs:
         shell: pwsh
         run: |
           $exePath = "build\Release\zerotier-one.exe"
-          if (!(Test-Path $exePath)) { Write-Warning "Executable not found at $exePath" }
           New-Item -ItemType Directory -Force -Path installer | Out-Null
           $lines = @(
             '<?xml version="1.0" encoding="UTF-8"?>'
