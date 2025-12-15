@@ -38,13 +38,15 @@ jobs:
           $prefix = "C:\vcpkg\installed\x64-windows"
           if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { throw "nlohmann/json.hpp missing at $prefix\include\nlohmann" }
 
-      - name: Configure (CMake → VS2019 solution, 官方最小化)
+      - name: Configure (CMake → VS2019 solution, Win7 compatible)
         shell: pwsh
         run: |
           cmake -S . -B build -G "Visual Studio 16 2019" -A $env:ARCH -T v142 `
             -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
             -DVCPKG_TARGET_TRIPLET=$env:VCPKG_DEFAULT_TRIPLET `
-            -DCMAKE_CXX_STANDARD=17
+            -DCMAKE_CXX_STANDARD=17 `
+            -DWINVER=0x0601 `
+            -D_WIN32_WINNT=0x0601
 
       - name: Build (cmake --build)
         shell: pwsh
