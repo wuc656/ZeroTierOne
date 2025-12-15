@@ -1,4 +1,4 @@
-name: Build ZeroTier MSI (Win7/2008R2 x64, Prometheus enabled)
+name: Build ZeroTier MSI (Win7/2008R2 x64, Prometheus enabled, fixed includes)
 
 on:
   workflow_dispatch:
@@ -37,8 +37,8 @@ jobs:
           & "$env:VCPKG_ROOT\vcpkg.exe" install nlohmann-json:$env:VCPKG_DEFAULT_TRIPLET
           & "$env:VCPKG_ROOT\vcpkg.exe" install prometheus-cpp:$env:VCPKG_DEFAULT_TRIPLET
           $prefix = "C:\vcpkg\installed\x64-windows"
-          if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { throw "nlohmann/json.hpp missing" }
-          if (!(Test-Path "$prefix\include\prometheus")) { Write-Host "prometheus headers from vcpkg installed" }
+          if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { throw "nlohmann/json.hpp missing at $prefix\include\nlohmann" }
+          if (!(Test-Path "$prefix\include\prometheus")) { Write-Host "prometheus headers present from vcpkg (standard API)" }
 
       - name: Persist MSVC INCLUDE/LIB across steps
         shell: pwsh
@@ -51,7 +51,18 @@ jobs:
         shell: pwsh
         run: |
           $prefix = "C:/vcpkg/installed/x64-windows"
-          $proj   = "${{ github.workspace }}/ext/prometheus-cpp-lite-1.0/simpleapi"
+          $simpleapi = "${{ github.workspace }}/ext/prometheus-cpp-lite-1.0/simpleapi"
+          if (!(Test-Path $simpleapi)) { throw "Missing ext/prometheus-cpp-lite-1.0/simpleapi at $simpleapi" }
+
+          # 以編譯器旗標強制標準與 include，避免 target 未繼承 CMake 變數的情況
+          $extraCxxFlags = @(
+            "/std:c++17"           # MSVC 標準
+            "/Zc:__cplusplus"      # 正確報告 __cplusplus
+            "/permissive-"         # 嚴格 C++ 規範模式
+            "/I $simpleapi"        # ZeroTier 自帶 simpleapi 路徑
+            "/I $prefix/include"   # vcpkg include 路徑
+          ) -join " "
+
           cmake -S . -B build -G "Visual Studio 16 2019" -A $env:ARCH -T v142 `
             -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
             -DVCPKG_TARGET_TRIPLET=$env:VCPKG_DEFAULT_TRIPLET `
@@ -61,8 +72,25 @@ jobs:
             -DWINVER=0x0601 `
             -D_WIN32_WINNT=0x0601 `
             -DZT_ENABLE_PROMETHEUS=ON `
-            -DCMAKE_INCLUDE_PATH="$proj;$prefix/include" `
-            -DCMAKE_LIBRARY_PATH=$prefix/lib
+            -DCMAKE_PREFIX_PATH=$prefix `
+            -DCMAKE_CXX_FLAGS="$extraCxxFlags"
+
+      - name: Verify vcxproj includes and defines
+        shell: pwsh
+        run: |
+          $vcx = "build/zerotiercore.vcxproj"
+          if (!(Test-Path $vcx)) { throw "vcxproj not found: $vcx" }
+
+          $projDir = (Resolve-Path "${{ github.workspace }}/ext/prometheus-cpp-lite-1.0/simpleapi").Path
+          $vcpkgInc = "C:\\vcpkg\\installed\\x64-windows\\include"
+
+          $vc = Get-Content $vcx -Raw
+          $hasInc = ($vc -match [regex]::Escape($projDir)) -and ($vc -match [regex]::Escape($vcpkgInc))
+          $hasWin7 = ($vc -match "_WIN32_WINNT=0x0601") -and ($vc -match "WINVER=0x0601")
+
+          if (-not $hasInc) { throw "AdditionalIncludeDirectories missing either $projDir or $vcpkgInc in $vcx" }
+          if (-not $hasWin7) { throw "PreprocessorDefinitions missing WINVER/_WIN32_WINNT=0x0601 in $vcx" }
+          Write-Host "vcxproj verification passed."
 
       - name: Build (cmake --build)
         shell: pwsh
@@ -76,6 +104,7 @@ jobs:
         shell: pwsh
         run: |
           $exePath = "build\Release\zerotier-one.exe"
+          if (!(Test-Path $exePath)) { throw "Executable not found at $exePath" }
           New-Item -ItemType Directory -Force -Path installer | Out-Null
           $lines = @(
             '<?xml version="1.0" encoding="UTF-8"?>'
