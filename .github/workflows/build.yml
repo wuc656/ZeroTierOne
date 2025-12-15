@@ -1,4 +1,4 @@
-name: Build ZeroTier MSI (Win7/2008R2 x64, Prometheus enabled, DevCmd fixed include)
+name: Build ZeroTier MSI (Win7/2008R2 x64, Prometheus enabled, vcxproj patched)
 
 on:
   workflow_dispatch:
@@ -39,14 +39,25 @@ jobs:
           $prefix = "C:\vcpkg\installed\x64-windows"
           Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_PREFIX=$prefix"
 
-      - name: Prepare include/library paths
+      - name: Resolve include bases
         shell: pwsh
         run: |
-          $prefix   = "C:\vcpkg\installed\x64-windows"
-          $promBase = Join-Path "${{ github.workspace }}" "ext\prometheus-cpp-lite-1.0\simpleapi\include"
+          $repoBase = "${{ github.workspace }}"
+          $promBase = Join-Path $repoBase "ext\prometheus-cpp-lite-1.0\simpleapi\include"
+          $vcpkgInc = "C:\vcpkg\installed\x64-windows\include"
+
+          if (!(Test-Path $promBase)) {
+            Write-Warning "Prometheus simpleapi include base not found: $promBase"
+          } elseif (!(Test-Path (Join-Path $promBase "prometheus\simpleapi.h"))) {
+            Write-Warning "prometheus/simpleapi.h not found under $promBase"
+          }
+
+          if (!(Test-Path (Join-Path $vcpkgInc "nlohmann\json.hpp"))) {
+            Write-Warning "nlohmann/json.hpp not found under $vcpkgInc"
+          }
+
           Add-Content -Path $env:GITHUB_ENV -Value "PROM_BASE=$promBase"
-          Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$promBase;$prefix\include;$env:INCLUDE"
-          Add-Content -Path $env:GITHUB_ENV -Value "LIB=$prefix\lib;$env:LIB"
+          Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_INCLUDE=$vcpkgInc"
 
       - name: Locate Visual Studio and DevCmd
         shell: pwsh
@@ -56,29 +67,61 @@ jobs:
           $devCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
           "VSCMD=$devCmd" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Configure (VS2019, Win7 compatible, Prometheus enabled)
+      - name: Configure (VS2019 generator, Win7 macros)
         shell: cmd
         run: |
           "%VSCMD%" && ^
-          set PREFIX=%VCPKG_PREFIX% && ^
-          set PROMBASE=%PROM_BASE% && ^
-          set EXTRA_C_FLAGS=/EHsc && ^
-          set EXTRA_CXX_FLAGS=/std:c++17 /Zc:__cplusplus /permissive- /EHsc /I%PROMBASE% /I%PREFIX%\include && ^
-          set VS_GLOBALS=IncludePath=%PROMBASE%;%PREFIX%\include;%%(IncludePath);LibraryPath=%PREFIX%\lib;%%(LibraryPath) && ^
           cmake -S . -B build -G "Visual Studio 16 2019" -A %ARCH% -T v142 ^
             -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake ^
             -DVCPKG_TARGET_TRIPLET=%VCPKG_DEFAULT_TRIPLET% ^
-            -DCMAKE_C_STANDARD=11 ^
-            -DCMAKE_C_STANDARD_REQUIRED=ON ^
-            -DCMAKE_CXX_STANDARD=17 ^
-            -DCMAKE_CXX_STANDARD_REQUIRED=ON ^
-            -DCMAKE_CXX_EXTENSIONS=OFF ^
-            -DWINVER=0x0601 ^
-            -D_WIN32_WINNT=0x0601 ^
-            -DZT_ENABLE_PROMETHEUS=ON ^
-            -DCMAKE_C_FLAGS="%EXTRA_C_FLAGS%" ^
-            -DCMAKE_CXX_FLAGS="%EXTRA_CXX_FLAGS%" ^
-            -DCMAKE_VS_GLOBALS="%VS_GLOBALS%"
+            -DCMAKE_C_STANDARD=11 -DCMAKE_C_STANDARD_REQUIRED=ON ^
+            -DCMAKE_CXX_STANDARD=17 -DCMAKE_CXX_STANDARD_REQUIRED=ON -DCMAKE_CXX_EXTENSIONS=OFF ^
+            -DCMAKE_C_FLAGS="/EHsc" ^
+            -DCMAKE_CXX_FLAGS="/std:c++17 /Zc:__cplusplus /permissive- /EHsc" ^
+            -DWINVER=0x0601 -D_WIN32_WINNT=0x0601 -DZT_ENABLE_PROMETHEUS=ON
+
+      - name: Patch vcxproj AdditionalIncludeDirectories
+        shell: pwsh
+        run: |
+          $vcx = "build\zerotiercore.vcxproj"
+          if (!(Test-Path $vcx)) { throw "vcxproj not found: $vcx" }
+
+          [xml]$x = Get-Content $vcx
+          $promBase  = $env:PROM_BASE
+          $vcpkgInc  = $env:VCPKG_INCLUDE
+
+          $newInc = @()
+          if ($promBase) { $newInc += $promBase }
+          if ($vcpkgInc) { $newInc += $vcpkgInc }
+          $newIncStr = ($newInc -join ';')
+
+          if (-not $newIncStr) {
+            Write-Warning "No include bases resolved; skipping vcxproj patch."
+          } else {
+            $ids = $x.Project.ItemDefinitionGroup
+            foreach ($id in $ids) {
+              if ($id.ClCompile) {
+                $cur = $id.ClCompile.AdditionalIncludeDirectories
+                if ($cur) {
+                  $cur.InnerText = "$newIncStr;%(AdditionalIncludeDirectories)"
+                } else {
+                  $n = $x.CreateElement("AdditionalIncludeDirectories", $x.Project.NamespaceURI)
+                  $n.InnerText = "$newIncStr;%(AdditionalIncludeDirectories)"
+                  $id.ClCompile.AppendChild($n) | Out-Null
+                }
+                # Also enforce exception handling to silence C4530
+                if ($id.ClCompile.ExceptionHandling) {
+                  $id.ClCompile.ExceptionHandling.InnerText = "Sync"
+                } else {
+                  $eh = $x.CreateElement("ExceptionHandling", $x.Project.NamespaceURI)
+                  $eh.InnerText = "Sync"
+                  $id.ClCompile.AppendChild($eh) | Out-Null
+                }
+              }
+            }
+            $x.Save($vcx)
+            Write-Host "Patched AdditionalIncludeDirectories with: $newIncStr"
+          }
 
       - name: Build (cmake --build via DevCmd)
         shell: cmd
@@ -93,6 +136,7 @@ jobs:
         shell: pwsh
         run: |
           $exePath = "build\Release\zerotier-one.exe"
+          if (!(Test-Path $exePath)) { Write-Warning "Executable not found at $exePath" }
           New-Item -ItemType Directory -Force -Path installer | Out-Null
           $lines = @(
             '<?xml version="1.0" encoding="UTF-8"?>'
