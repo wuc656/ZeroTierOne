@@ -38,6 +38,13 @@ jobs:
           $prefix = "C:\vcpkg\installed\x64-windows"
           if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { throw "nlohmann/json.hpp missing at $prefix\include\nlohmann" }
 
+      - name: Persist MSVC INCLUDE/LIB across steps
+        shell: pwsh
+        run: |
+          $prefix = "C:\vcpkg\installed\x64-windows"
+          Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$prefix\include;$env:INCLUDE"
+          Add-Content -Path $env:GITHUB_ENV -Value "LIB=$prefix\lib;$env:LIB"
+
       - name: Configure (CMake → VS2019 solution, Win7 compatible)
         shell: pwsh
         run: |
@@ -46,7 +53,10 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=$env:VCPKG_DEFAULT_TRIPLET `
             -DCMAKE_CXX_STANDARD=17 `
             -DWINVER=0x0601 `
-            -D_WIN32_WINNT=0x0601
+            -D_WIN32_WINNT=0x0601 `
+            -DZT_ENABLE_PROMETHEUS=OFF `
+            -DZT_ENABLE_METRICS=OFF `
+            -DCMAKE_DISABLE_FIND_PACKAGE_prometheus-cpp=ON
 
       - name: Build (cmake --build)
         shell: pwsh
