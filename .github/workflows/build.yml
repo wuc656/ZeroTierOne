@@ -1,4 +1,4 @@
-name: Build ZeroTier MSI (Win7/2008R2 x64, Prometheus enabled, vcxproj patched)
+name: Build ZeroTier MSI (Win7/2008R2 x64, Prometheus enabled, robust vcxproj patch)
 
 on:
   workflow_dispatch:
@@ -38,23 +38,17 @@ jobs:
           & "$env:VCPKG_ROOT\vcpkg.exe" install prometheus-cpp:$env:VCPKG_DEFAULT_TRIPLET
           $prefix = "C:\vcpkg\installed\x64-windows"
           Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_PREFIX=$prefix"
+          Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_INCLUDE=$prefix\include"
 
-      - name: Resolve include bases
+      - name: Resolve include bases (repo + vcpkg)
         shell: pwsh
         run: |
           $repoBase = "${{ github.workspace }}"
           $promBase = Join-Path $repoBase "ext\prometheus-cpp-lite-1.0\simpleapi\include"
           $vcpkgInc = "C:\vcpkg\installed\x64-windows\include"
 
-          if (!(Test-Path $promBase)) {
-            Write-Warning "Prometheus include base not found: $promBase"
-          } elseif (!(Test-Path (Join-Path $promBase "prometheus\simpleapi.h"))) {
-            Write-Warning "prometheus/simpleapi.h not found under $promBase"
-          }
-
-          if (!(Test-Path (Join-Path $vcpkgInc "nlohmann\json.hpp"))) {
-            Write-Warning "nlohmann/json.hpp not found under $vcpkgInc"
-          }
+          if (!(Test-Path $promBase)) { Write-Warning "Prometheus include base not found: $promBase" }
+          if (!(Test-Path (Join-Path $vcpkgInc "nlohmann\json.hpp"))) { Write-Warning "nlohmann/json.hpp not found under $vcpkgInc" }
 
           Add-Content -Path $env:GITHUB_ENV -Value "PROM_BASE=$promBase"
           Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_INCLUDE=$vcpkgInc"
@@ -68,7 +62,7 @@ jobs:
           $devCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
           "VSCMD=$devCmd" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Configure (VS2019 generator, Win7 macros)
+      - name: Configure (VS2019 generator, Win7 macros, explicit flags)
         shell: cmd
         run: |
           "%VSCMD%" && ^
@@ -81,36 +75,40 @@ jobs:
             -DCMAKE_CXX_FLAGS="/std:c++17 /Zc:__cplusplus /permissive- /EHsc" ^
             -DWINVER=0x0601 -D_WIN32_WINNT=0x0601 -DZT_ENABLE_PROMETHEUS=ON
 
-      - name: Patch vcxproj AdditionalIncludeDirectories (safe)
+      - name: Patch vcxproj: AdditionalIncludeDirectories, AdditionalOptions, ExceptionHandling (robust)
         shell: pwsh
         run: |
-          $vcx = "build\zerotiercore.vcxproj"
-          if (!(Test-Path $vcx)) { throw "vcxproj not found: $vcx" }
-
-          [xml]$x = Get-Content $vcx
+          $buildDir = "build"
+          $vcxFiles = Get-ChildItem -Path $buildDir -Filter *.vcxproj -Recurse -ErrorAction SilentlyContinue
+          if (-not $vcxFiles) { throw "No .vcxproj files found under $buildDir" }
 
           $promBase = $env:PROM_BASE
           $vcpkgInc = $env:VCPKG_INCLUDE
 
-          # 組合要加入的 include 字串（過濾空值）
+          # Compose include string: put vcpkg include first so prometheus headers from vcpkg resolve benchmark.h
           $incs = @()
-          if ($promBase -and (Test-Path $promBase)) { $incs += $promBase }
           if ($vcpkgInc -and (Test-Path $vcpkgInc)) { $incs += $vcpkgInc }
+          if ($promBase -and (Test-Path $promBase)) { $incs += $promBase }
           $newIncStr = ($incs -join ';')
 
-          if (-not $newIncStr) {
-            Write-Warning "No valid include paths resolved; skipping vcxproj patch."
-          } else {
-            # 取得 namespace（處理有無 default namespace）
+          # AdditionalOptions to force MSVC standard and include paths (cl.exe)
+          $addOpts = "/std:c++17"
+          foreach ($p in $incs) { $addOpts += " /I`"$p`"" }
+
+          foreach ($f in $vcxFiles) {
+            Write-Host "Patching $($f.FullName)"
+            [xml]$x = Get-Content $f.FullName
+
             $ns = $x.Project.NamespaceURI
-            # 針對每個 ItemDefinitionGroup 裡的 ClCompile 做修改或新增節點
             $modified = $false
+
+            # Patch ItemDefinitionGroup -> ClCompile
             foreach ($id in $x.Project.ItemDefinitionGroup) {
               if ($id.ClCompile) {
                 # AdditionalIncludeDirectories
                 $aid = $id.ClCompile.AdditionalIncludeDirectories
                 if ($aid -and $aid.InnerText) {
-                  # 已存在則 prepend（保留原有 %(AdditionalIncludeDirectories)）
+                  # Prepend vcpkg/promBase but keep existing placeholders
                   $aid.InnerText = "$newIncStr;%(AdditionalIncludeDirectories)"
                 } else {
                   $n = $x.CreateElement("AdditionalIncludeDirectories", $ns)
@@ -118,7 +116,18 @@ jobs:
                   $id.ClCompile.AppendChild($n) | Out-Null
                 }
 
-                # ExceptionHandling -> 設為 Sync（若已有則覆寫，若無則新增）
+                # AdditionalOptions (append our forced options)
+                $ao = $id.ClCompile.AdditionalOptions
+                if ($ao -and $ao.InnerText) {
+                  # ensure our options are present (prepend)
+                  $ao.InnerText = "$addOpts %(AdditionalOptions)"
+                } else {
+                  $n2 = $x.CreateElement("AdditionalOptions", $ns)
+                  $n2.InnerText = "$addOpts %(AdditionalOptions)"
+                  $id.ClCompile.AppendChild($n2) | Out-Null
+                }
+
+                # ExceptionHandling -> Sync
                 $eh = $id.ClCompile.ExceptionHandling
                 if ($eh -and $eh.InnerText) {
                   $eh.InnerText = "Sync"
@@ -132,11 +141,48 @@ jobs:
               }
             }
 
+            # Also try to patch PropertyGroup entries that may contain Configuration-specific ClCompile settings
+            foreach ($pg in $x.Project.PropertyGroup) {
+              # Some projects put AdditionalIncludeDirectories under PropertyGroup/ClCompile
+              foreach ($child in $pg.ChildNodes) {
+                if ($child.LocalName -eq "ClCompile") {
+                  # ensure AdditionalIncludeDirectories exists under this ClCompile
+                  $aid = $child.AdditionalIncludeDirectories
+                  if ($aid -and $aid.InnerText) {
+                    $aid.InnerText = "$newIncStr;%(AdditionalIncludeDirectories)"
+                  } else {
+                    $n = $x.CreateElement("AdditionalIncludeDirectories", $ns)
+                    $n.InnerText = "$newIncStr;%(AdditionalIncludeDirectories)"
+                    $child.AppendChild($n) | Out-Null
+                  }
+                  # AdditionalOptions
+                  $ao = $child.AdditionalOptions
+                  if ($ao -and $ao.InnerText) {
+                    $ao.InnerText = "$addOpts %(AdditionalOptions)"
+                  } else {
+                    $n2 = $x.CreateElement("AdditionalOptions", $ns)
+                    $n2.InnerText = "$addOpts %(AdditionalOptions)"
+                    $child.AppendChild($n2) | Out-Null
+                  }
+                  # ExceptionHandling
+                  $eh = $child.ExceptionHandling
+                  if ($eh -and $eh.InnerText) {
+                    $eh.InnerText = "Sync"
+                  } else {
+                    $ehNew = $x.CreateElement("ExceptionHandling", $ns)
+                    $ehNew.InnerText = "Sync"
+                    $child.AppendChild($ehNew) | Out-Null
+                  }
+                  $modified = $true
+                }
+              }
+            }
+
             if ($modified) {
-              $x.Save($vcx)
-              Write-Host "Patched vcxproj AdditionalIncludeDirectories with: $newIncStr"
+              $x.Save($f.FullName)
+              Write-Host "Patched $($f.Name): include=$newIncStr, opts=$addOpts"
             } else {
-              Write-Warning "No ClCompile nodes found to patch in $vcx"
+              Write-Warning "No ClCompile/PropertyGroup patch points found in $($f.Name)"
             }
           }
 
