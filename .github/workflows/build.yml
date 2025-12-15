@@ -1,4 +1,4 @@
-name: Build ZeroTier MSI (Win7/2008R2 x64, Prometheus enabled, VS Build Tools)
+name: Build ZeroTier MSI (Win7/2008R2 x64, Prometheus enabled, VS DevCmd)
 
 on:
   workflow_dispatch:
@@ -16,11 +16,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      # 安裝 Visual Studio Build Tools (含 VC++ 編譯器)
-      - name: Install Visual Studio Build Tools
-        shell: pwsh
-        run: choco install visualstudio2019buildtools --package-parameters "--add Microsoft.VisualStudio.Workload.VCTools" -y
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v1.3.1
@@ -42,48 +37,65 @@ jobs:
           & "$env:VCPKG_ROOT\vcpkg.exe" install nlohmann-json:$env:VCPKG_DEFAULT_TRIPLET
           & "$env:VCPKG_ROOT\vcpkg.exe" install prometheus-cpp:$env:VCPKG_DEFAULT_TRIPLET
           $prefix = "C:\vcpkg\installed\x64-windows"
-          if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { throw "nlohmann/json.hpp missing" }
-          if (!(Test-Path "$prefix\include\prometheus")) { Write-Host "prometheus headers present from vcpkg" }
+          if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { throw "nlohmann/json.hpp missing at $prefix\include\nlohmann" }
+          if (!(Test-Path "$prefix\include\prometheus")) { Write-Host "prometheus headers present from vcpkg (standard API)" }
 
-      - name: Prepare include/library paths
+      - name: Prepare include/library paths for compiler and VS globals
         shell: pwsh
         run: |
           $prefix = "C:\vcpkg\installed\x64-windows"
           $simpleapi = Join-Path "${{ github.workspace }}" "ext\prometheus-cpp-lite-1.0\simpleapi"
-          if (!(Test-Path $simpleapi)) { throw "Missing ext\prometheus-cpp-lite-1.0/simpleapi" }
+          if (!(Test-Path $simpleapi)) { throw "Missing ext\prometheus-cpp-lite-1.0\simpleapi at $simpleapi" }
 
+          # 1) 編譯器層級：讓 cl.exe 在編譯時能找到
           Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$simpleapi;$prefix\include;$env:INCLUDE"
           Add-Content -Path $env:GITHUB_ENV -Value "LIB=$prefix\lib;$env:LIB"
+
+          # 2) 後續步驟取用
           Add-Content -Path $env:GITHUB_ENV -Value "SIMPLEAPI_PATH=$simpleapi"
           Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_PREFIX=$prefix"
 
-      - name: Configure (CMake → VS2019 solution, Win7 compatible, Prometheus enabled)
+      - name: Locate Visual Studio and DevCmd
+        id: vs
         shell: pwsh
         run: |
-          $simpleapi = $env:SIMPLEAPI_PATH
-          $prefix    = $env:VCPKG_PREFIX
-          $extraCxxFlags = "/std:c++17 /Zc:__cplusplus /permissive-"
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (!(Test-Path $vswhere)) { throw "vswhere.exe not found at $vswhere" }
 
-          $vsGlobals = @(
-            "IncludePath=$simpleapi;$prefix\include;%(IncludePath)"
-            "LibraryPath=$prefix\lib;%(LibraryPath)"
-          ) -join ";"
+          $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vsPath) { throw "No suitable Visual Studio with VC Tools found" }
 
-          cmake -S . -B build -G "Visual Studio 16 2019" -A $env:ARCH -T v142 `
-            -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
-            -DVCPKG_TARGET_TRIPLET=$env:VCPKG_DEFAULT_TRIPLET `
-            -DCMAKE_CXX_STANDARD=17 `
-            -DCMAKE_CXX_STANDARD_REQUIRED=ON `
-            -DCMAKE_CXX_EXTENSIONS=OFF `
-            -DWINVER=0x0601 `
-            -D_WIN32_WINNT=0x0601 `
-            -DZT_ENABLE_PROMETHEUS=ON `
-            -DCMAKE_CXX_FLAGS="$extraCxxFlags" `
-            -DCMAKE_VS_GLOBALS="$vsGlobals"
+          $devCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
+          if (!(Test-Path $devCmd)) { throw "VsDevCmd.bat not found at $devCmd" }
 
-      - name: Build (cmake --build)
-        shell: pwsh
-        run: cmake --build build --config $env:CONFIGURATION --parallel
+          Write-Host "VS path: $vsPath"
+          Write-Host "VsDevCmd: $devCmd"
+          "VSCMD=$devCmd" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Configure (CMake → VS2019 solution, Win7 compatible, Prometheus enabled, via DevCmd)
+        shell: cmd
+        run: |
+          "%VSCMD%" && ^
+          set PREFIX=%VCPKG_PREFIX% && ^
+          set SIMPLEAPI=%SIMPLEAPI_PATH% && ^
+          set EXTRA_CXX_FLAGS=/std:c++17 /Zc:__cplusplus /permissive- && ^
+          set VS_GLOBALS=IncludePath=%SIMPLEAPI%;%PREFIX%\include;%%(IncludePath);LibraryPath=%PREFIX%\lib;%%(LibraryPath) && ^
+          cmake -S . -B build -G "Visual Studio 16 2019" -A %ARCH% -T v142 ^
+            -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake ^
+            -DVCPKG_TARGET_TRIPLET=%VCPKG_DEFAULT_TRIPLET% ^
+            -DCMAKE_CXX_STANDARD=17 ^
+            -DCMAKE_CXX_STANDARD_REQUIRED=ON ^
+            -DCMAKE_CXX_EXTENSIONS=OFF ^
+            -DWINVER=0x0601 ^
+            -D_WIN32_WINNT=0x0601 ^
+            -DZT_ENABLE_PROMETHEUS=ON ^
+            -DCMAKE_CXX_FLAGS="%EXTRA_CXX_FLAGS%" ^
+            -DCMAKE_VS_GLOBALS="%VS_GLOBALS%"
+
+      - name: Build (cmake --build via DevCmd)
+        shell: cmd
+        run: |
+          "%VSCMD%" && cmake --build build --config %CONFIGURATION% --parallel
 
       - name: Install WiX Toolset
         shell: pwsh
