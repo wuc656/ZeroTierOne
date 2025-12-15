@@ -1,4 +1,4 @@
-name: Build ZeroTier MSI (Win7/2008R2 x64, Prometheus enabled, fixed includes)
+name: Build ZeroTier MSI (Win7/2008R2 x64, Prometheus enabled, VS-global includes)
 
 on:
   workflow_dispatch:
@@ -40,28 +40,35 @@ jobs:
           if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { throw "nlohmann/json.hpp missing at $prefix\include\nlohmann" }
           if (!(Test-Path "$prefix\include\prometheus")) { Write-Host "prometheus headers present from vcpkg (standard API)" }
 
-      - name: Persist MSVC INCLUDE/LIB across steps
+      - name: Prepare include/library paths (env + VS globals)
         shell: pwsh
         run: |
           $prefix = "C:\vcpkg\installed\x64-windows"
-          Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$prefix\include;$env:INCLUDE"
+          $simpleapi = Join-Path "${{ github.workspace }}" "ext\prometheus-cpp-lite-1.0\simpleapi"
+          if (!(Test-Path $simpleapi)) { throw "Missing ext\prometheus-cpp-lite-1.0\simpleapi at $simpleapi" }
+
+          # 1) 環境層級：讓 cl.exe 真的在編譯時看得到
+          Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$simpleapi;$prefix\include;$env:INCLUDE"
           Add-Content -Path $env:GITHUB_ENV -Value "LIB=$prefix\lib;$env:LIB"
 
-      - name: Configure (CMake → VS2019 solution, Win7 compatible, Prometheus enabled)
+          # 2) 輸出供後續步驟使用
+          Add-Content -Path $env:GITHUB_ENV -Value "SIMPLEAPI_PATH=$simpleapi"
+          Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_PREFIX=$prefix"
+
+      - name: Configure (CMake → VS2019 solution, Win7 compatible, Prometheus enabled, VS globals)
         shell: pwsh
         run: |
-          $prefix = "C:/vcpkg/installed/x64-windows"
-          $simpleapi = "${{ github.workspace }}/ext/prometheus-cpp-lite-1.0/simpleapi"
-          if (!(Test-Path $simpleapi)) { throw "Missing ext/prometheus-cpp-lite-1.0/simpleapi at $simpleapi" }
+          $simpleapi = $env:SIMPLEAPI_PATH
+          $prefix    = $env:VCPKG_PREFIX
 
-          # 以編譯器旗標強制標準與 include，避免 target 未繼承 CMake 變數的情況
-          $extraCxxFlags = @(
-            "/std:c++17"           # MSVC 標準
-            "/Zc:__cplusplus"      # 正確報告 __cplusplus
-            "/permissive-"         # 嚴格 C++ 規範模式
-            "/I $simpleapi"        # ZeroTier 自帶 simpleapi 路徑
-            "/I $prefix/include"   # vcpkg include 路徑
-          ) -join " "
+          # 強制 MSVC 使用 C++17、正確 __cplusplus、嚴格模式
+          $extraCxxFlags = "/std:c++17 /Zc:__cplusplus /permissive-"
+
+          # 以 VS 全域屬性注入 IncludePath/LibraryPath，確保寫入 .vcxproj 的 AdditionalIncludeDirectories/LibraryPath
+          $vsGlobals = @(
+            "IncludePath=$simpleapi;$prefix\include;%(IncludePath)"
+            "LibraryPath=$prefix\lib;%(LibraryPath)"
+          ) -join ";"
 
           cmake -S . -B build -G "Visual Studio 16 2019" -A $env:ARCH -T v142 `
             -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
@@ -72,24 +79,27 @@ jobs:
             -DWINVER=0x0601 `
             -D_WIN32_WINNT=0x0601 `
             -DZT_ENABLE_PROMETHEUS=ON `
-            -DCMAKE_PREFIX_PATH=$prefix `
-            -DCMAKE_CXX_FLAGS="$extraCxxFlags"
+            -DCMAKE_CXX_FLAGS="$extraCxxFlags" `
+            -DCMAKE_VS_GLOBALS="$vsGlobals"
 
-      - name: Verify vcxproj includes and defines
+      - name: Verify vcxproj (includes, library paths, Win7 macros)
         shell: pwsh
         run: |
           $vcx = "build/zerotiercore.vcxproj"
           if (!(Test-Path $vcx)) { throw "vcxproj not found: $vcx" }
 
-          $projDir = (Resolve-Path "${{ github.workspace }}/ext/prometheus-cpp-lite-1.0/simpleapi").Path
-          $vcpkgInc = "C:\\vcpkg\\installed\\x64-windows\\include"
+          $simpleapi = (Resolve-Path $env:SIMPLEAPI_PATH).Path
+          $vcpkgInc  = (Resolve-Path "$env:VCPKG_PREFIX\include").Path
+          $vcpkgLib  = (Resolve-Path "$env:VCPKG_PREFIX\lib").Path
 
           $vc = Get-Content $vcx -Raw
-          $hasInc = ($vc -match [regex]::Escape($projDir)) -and ($vc -match [regex]::Escape($vcpkgInc))
+          $hasInc = ($vc -match [regex]::Escape($simpleapi)) -and ($vc -match [regex]::Escape($vcpkgInc))
+          $hasLib = ($vc -match [regex]::Escape($vcpkgLib))
           $hasWin7 = ($vc -match "_WIN32_WINNT=0x0601") -and ($vc -match "WINVER=0x0601")
 
-          if (-not $hasInc) { throw "AdditionalIncludeDirectories missing either $projDir or $vcpkgInc in $vcx" }
-          if (-not $hasWin7) { throw "PreprocessorDefinitions missing WINVER/_WIN32_WINNT=0x0601 in $vcx" }
+          if (-not $hasInc) { throw "IncludePath/AdditionalIncludeDirectories missing: $simpleapi or $vcpkgInc" }
+          if (-not $hasLib) { throw "LibraryPath missing: $vcpkgLib" }
+          if (-not $hasWin7) { throw "PreprocessorDefinitions missing WINVER/_WIN32_WINNT=0x0601" }
           Write-Host "vcxproj verification passed."
 
       - name: Build (cmake --build)
