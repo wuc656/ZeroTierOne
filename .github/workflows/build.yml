@@ -44,7 +44,6 @@ jobs:
         run: |
           $prefix   = "C:\vcpkg\installed\x64-windows"
           $promBase = Join-Path "${{ github.workspace }}" "ext\prometheus-cpp-lite-1.0\simpleapi\include"
-
           Add-Content -Path $env:GITHUB_ENV -Value "PROM_BASE=$promBase"
           Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$promBase;$prefix\include;$env:INCLUDE"
           Add-Content -Path $env:GITHUB_ENV -Value "LIB=$prefix\lib;$env:LIB"
