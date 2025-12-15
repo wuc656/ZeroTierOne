@@ -45,6 +45,7 @@ jobs:
         run: |
           $prefix    = "C:\vcpkg\installed\x64-windows"
           $promBase  = Join-Path "${{ github.workspace }}" "ext\prometheus-cpp-lite-1.0\simpleapi"
+          if (!(Test-Path $promBase)) { throw "Expected directory missing: $promBase" }
           if (!(Test-Path (Join-Path $promBase "prometheus\simpleapi.h"))) {
             throw "Expected header missing: $promBase\prometheus\simpleapi.h"
           }
