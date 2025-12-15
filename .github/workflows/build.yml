@@ -17,6 +17,8 @@ jobs:
       CONFIGURATION: Release
       ARCH: x64
       VCPKG_ROOT: C:\vcpkg
+      VCPKG_DEFAULT_TRIPLET: x64-windows
+      ZT_ENABLE_PROMETHEUS: OFF  # 先關掉 Prometheus 指標路徑，避免 Windows 上不必要的複雜性
 
     steps:
       - name: Checkout
@@ -39,15 +41,21 @@ jobs:
       - name: Install dependencies via vcpkg
         shell: pwsh
         run: |
-          & "$env:VCPKG_ROOT\vcpkg.exe" install nlohmann-json:x64-windows
-          & "$env:VCPKG_ROOT\vcpkg.exe" install prometheus-cpp:x64-windows
+          & "$env:VCPKG_ROOT\vcpkg.exe" install nlohmann-json:$env:VCPKG_DEFAULT_TRIPLET
+          if ($env:ZT_ENABLE_PROMETHEUS -eq "ON") {
+            & "$env:VCPKG_ROOT\vcpkg.exe" install prometheus-cpp:$env:VCPKG_DEFAULT_TRIPLET
+          }
 
       - name: Configure (CMake → VS2019 solution)
         shell: pwsh
-        run: cmake -S . -B build -G "Visual Studio 16 2019" -A $env:ARCH -T v142 `
-          -DWINVER=$env:WINVER -D_WIN32_WINNT=$env:WIN32_WINNT `
-          -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
-          -DCMAKE_CXX_STANDARD=17
+        run: |
+          $toolchain = "C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
+          $prom = if ($env:ZT_ENABLE_PROMETHEUS -eq "ON") { "ON" } else { "OFF" }
+          cmake -S . -B build -G "Visual Studio 16 2019" -A $env:ARCH -T v142 `
+            -DWINVER=$env:WINVER -D_WIN32_WINNT=$env:WIN32_WINNT `
+            -DCMAKE_TOOLCHAIN_FILE=$toolchain `
+            -DCMAKE_CXX_STANDARD=17 `
+            -DZT_ENABLE_PROMETHEUS=$prom
 
       - name: Build (cmake --build)
         shell: pwsh
