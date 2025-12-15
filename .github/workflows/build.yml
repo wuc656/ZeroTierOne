@@ -24,8 +24,10 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v1.3.1
 
-      - name: Install CMake
+      - name: Install CMake 3.21
         uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: 3.21.0
 
       - name: Configure (CMake → VS2019 solution)
         shell: pwsh
