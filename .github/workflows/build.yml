@@ -33,7 +33,7 @@ jobs:
           git clone https://github.com/microsoft/vcpkg $env:VCPKG_ROOT
           & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat"
 
-      - name: Install dependencies via vcpkg
+      - name: Install dependencies via vcpkg (official set)
         shell: pwsh
         run: |
           & "$env:VCPKG_ROOT\vcpkg.exe" install nlohmann-json:$env:VCPKG_DEFAULT_TRIPLET
@@ -41,18 +41,22 @@ jobs:
           & "$env:VCPKG_ROOT\vcpkg.exe" install curl[ssl]:$env:VCPKG_DEFAULT_TRIPLET
           & "$env:VCPKG_ROOT\vcpkg.exe" install openssl:$env:VCPKG_DEFAULT_TRIPLET
           & "$env:VCPKG_ROOT\vcpkg.exe" install zlib:$env:VCPKG_DEFAULT_TRIPLET
+          $prefix = "C:\vcpkg\installed\x64-windows"
+          if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { throw "nlohmann/json.hpp missing at $prefix\include\nlohmann" }
+          if (!(Test-Path "$prefix\include\prometheus\simpleapi.h")) { throw "prometheus/simpleapi.h missing at $prefix\include\prometheus" }
 
-      - name: Persist INCLUDE/LIB for MSVC (關鍵修正)
+      - name: Persist MSVC INCLUDE/LIB across steps (critical)
         shell: pwsh
         run: |
           $prefix = "C:\vcpkg\installed\x64-windows"
           Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$prefix\include;$env:INCLUDE"
           Add-Content -Path $env:GITHUB_ENV -Value "LIB=$prefix\lib;$env:LIB"
 
-      - name: Configure (CMake → VS2019 solution)
+      - name: Configure (CMake → VS2019 solution, with robust /I)
         shell: pwsh
         run: |
           $prefix = "C:/vcpkg/installed/x64-windows"
+          $inc = "/I `"$prefix/include`" /EHsc /D NOMINMAX"
           cmake -S . -B build -G "Visual Studio 16 2019" -A $env:ARCH -T v142 `
             -DWINVER=$env:WINVER -D_WIN32_WINNT=$env:WIN32_WINNT `
             -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
@@ -61,7 +65,12 @@ jobs:
             -DCMAKE_INCLUDE_PATH=$prefix/include `
             -DCMAKE_LIBRARY_PATH=$prefix/lib `
             -DCMAKE_CXX_STANDARD=17 `
-            -DCMAKE_CXX_FLAGS="/EHsc /D NOMINMAX"
+            -DCMAKE_C_FLAGS="$inc" `
+            -DCMAKE_CXX_FLAGS="$inc" `
+            -DCMAKE_C_FLAGS_RELEASE="$inc" `
+            -DCMAKE_CXX_FLAGS_RELEASE="$inc" `
+            -DCMAKE_C_FLAGS_DEBUG="$inc" `
+            -DCMAKE_CXX_FLAGS_DEBUG="$inc"
 
       - name: Build (cmake --build)
         shell: pwsh
