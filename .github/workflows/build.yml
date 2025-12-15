@@ -37,16 +37,7 @@ jobs:
         shell: pwsh
         run: |
           & "$env:VCPKG_ROOT\vcpkg.exe" install nlohmann-json:$env:VCPKG_DEFAULT_TRIPLET
-
-      - name: Export vcpkg include/lib to MSVC environment
-        shell: pwsh
-        run: |
-          $prefix = "C:\vcpkg\installed\x64-windows"
-          if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { throw "nlohmann/json.hpp not found in $prefix\include\nlohmann" }
-          $env:INCLUDE = "$prefix\include;$env:INCLUDE"
-          $env:LIB     = "$prefix\lib;$env:LIB"
-          [Environment]::SetEnvironmentVariable('INCLUDE', $env:INCLUDE, 'Process')
-          [Environment]::SetEnvironmentVariable('LIB', $env:LIB, 'Process')
+          # 暫時不安裝 prometheus-cpp，先讓核心編譯過關
 
       - name: Configure (CMake → VS2019 solution)
         shell: pwsh
@@ -59,7 +50,7 @@ jobs:
             -DCMAKE_INCLUDE_PATH=$prefix/include `
             -DCMAKE_LIBRARY_PATH=$prefix/lib `
             -DCMAKE_CXX_STANDARD=17 `
-            -DCMAKE_CXX_FLAGS="/EHsc /D NOMINMAX" `
+            -DCMAKE_CXX_FLAGS="/I $prefix/include /EHsc /D NOMINMAX" `
             -DZT_ENABLE_PROMETHEUS=OFF
 
       - name: Build (cmake --build)
