@@ -1,40 +1,23 @@
-name: Build ZeroTier MSI (Win7/2008R2)
+name: Build ZeroTier MSI (Win7/2008R2 x64)
 
 on:
   push:
-    branches: [ dev ]
+    branches: [ dev ]   # ZeroTierOne 預設分支是 dev
   pull_request:
     branches: [ dev ]
-  workflow_dispatch:
-    inputs:
-      configuration:
-        description: Build configuration
-        required: true
-        default: Release
-        type: choice
-        options:
-          - Release
-          - Debug
-      arch:
-        description: Target architecture
-        required: true
-        default: x64
-        type: choice
-        options:
-          - x64
-          - x86
+  workflow_dispatch:     # 支援手動觸發
 
 jobs:
   build:
-    runs-on: windows-2019
+    runs-on: windows-2019   # 使用 VS2019 (v142 toolset)
 
     env:
-      # 強制目標 OS 為 Windows 7 / Server 2008 R2
       WINVER: 0x0601
       WIN32_WINNT: 0x0601
-      # 預設 CMake 生成器與 toolset
       CMAKE_GENERATOR: Visual Studio 16 2019
       MSVC_TOOLSET: v142
+      CONFIGURATION: Release
+      ARCH: x64
 
     steps:
       - name: Checkout
@@ -44,121 +27,57 @@ jobs:
         uses: microsoft/setup-msbuild@v1.3.1
 
       - name: Install CMake
-        uses: lukka/get-cmake@v3.27.7
-
-      - name: Show environment
-        shell: pwsh
-        run: |
-          Write-Host "Configuration: ${{ github.event.inputs.configuration || 'Release' }}"
-          Write-Host "Arch: ${{ github.event.inputs.arch || 'x64' }}"
-          Write-Host "Generator: $env:CMAKE_GENERATOR"
-          Write-Host "Toolset: $env:MSVC_TOOLSET"
-          Write-Host "WINVER: $env:WINVER"
-          Write-Host "_WIN32_WINNT: $env:WIN32_WINNT"
+        uses: lukka/get-cmake@latest
 
       - name: Configure (CMake → VS2019 solution)
-        shell: pwsh
         run: |
-          $conf = "${{ github.event.inputs.configuration || 'Release' }}"
-          $arch = "${{ github.event.inputs.arch || 'x64' }}"
-          # 以 build/ 為 out-of-source build 目錄
-          cmake -S . -B build `
-            -G "$env:CMAKE_GENERATOR" `
-            -A $arch `
-            -T $env:MSVC_TOOLSET `
-            -DWINVER=$env:WINVER `
-            -D_WIN32_WINNT=$env:WIN32_WINNT `
-            -DCMAKE_C_FLAGS="/DWINVER=$env:WINVER /D_WIN32_WINNT=$env:WIN32_WINNT" `
-            -DCMAKE_CXX_FLAGS="/DWINVER=$env:WINVER /D_WIN32_WINNT=$env:WIN32_WINNT"
+          cmake -S . -B build ^
+            -G "%CMAKE_GENERATOR%" ^
+            -A %ARCH% ^
+            -T %MSVC_TOOLSET% ^
+            -DWINVER=%WINVER% ^
+            -D_WIN32_WINNT=%WIN32_WINNT% ^
+            -DCMAKE_C_FLAGS="/DWINVER=%WINVER% /D_WIN32_WINNT=%WIN32_WINNT%" ^
+            -DCMAKE_CXX_FLAGS="/DWINVER=%WINVER% /D_WIN32_WINNT=%WIN32_WINNT%"
 
-      - name: Build (MSBuild)
-        shell: pwsh
+      - name: Build Solution
+        run: msbuild build/ZeroTierOne.sln /p:Configuration=%CONFIGURATION% /m
+
+      - name: Install WiX Toolset
+        run: choco install wix --version=3.11.2 -y
+
+      - name: Generate minimal WiX installer.wxs
         run: |
-          $conf = "${{ github.event.inputs.configuration || 'Release' }}"
-          # 若專案根據 CMake 預設命名為 ALL_BUILD，可直接建置 ALL_BUILD；否則也可用 cmake --build
-          msbuild build/ZeroTierOne.sln /p:Configuration=$conf /m
+          mkdir installer
+          echo ^<?xml version="1.0" encoding="UTF-8"?^> > installer\installer.wxs
+          echo ^<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi"^> >> installer\installer.wxs
+          echo   ^<Product Id="*" Name="ZeroTierOne" Language="1033" Version="1.0.0.0" Manufacturer="YourOrg" UpgradeCode="PUT-GUID-HERE"^> >> installer\installer.wxs
+          echo     ^<Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" /^> >> installer\installer.wxs
+          echo     ^<MediaTemplate /^> >> installer\installer.wxs
+          echo     ^<Directory Id="TARGETDIR" Name="SourceDir"^> >> installer\installer.wxs
+          echo       ^<Directory Id="ProgramFilesFolder"^> >> installer\installer.wxs
+          echo         ^<Directory Id="INSTALLFOLDER" Name="ZeroTierOne"^> >> installer\installer.wxs
+          echo           ^<Component Id="MainExe" Guid="PUT-GUID-HERE"^> >> installer\installer.wxs
+          echo             ^<File Id="ZeroTierExe" Source="build\\Release\\zerotier-one.exe" KeyPath="yes" /^> >> installer\installer.wxs
+          echo           ^</Component^> >> installer\installer.wxs
+          echo         ^</Directory^> >> installer\installer.wxs
+          echo       ^</Directory^> >> installer\installer.wxs
+          echo     ^</Directory^> >> installer\installer.wxs
+          echo     ^<Feature Id="ProductFeature" Title="ZeroTierOne" Level="1"^> >> installer\installer.wxs
+          echo       ^<ComponentRef Id="MainExe" /^> >> installer\installer.wxs
+          echo     ^</Feature^> >> installer\installer.wxs
+          echo   ^</Product^> >> installer\installer.wxs
+          echo ^</Wix^> >> installer\installer.wxs
 
-      - name: Locate binaries
-        id: locate
-        shell: pwsh
+      - name: Package MSI
         run: |
-          $conf = "${{ github.event.inputs.configuration || 'Release' }}"
-          $arch = "${{ github.event.inputs.arch || 'x64' }}"
-          # 嘗試常見輸出路徑
-          $paths = @(
-            "build/$conf/zerotier-one.exe",
-            "build/$conf/ZeroTierOne.exe",
-            "build/$conf/zerotier.exe",
-            "build/$conf/zerotier-one/zerotier-one.exe"
-          )
-          $found = $paths | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $found) {
-            Write-Error "Executable not found in expected locations: $($paths -join ', ')"
-          } else {
-            Write-Host "Found exe: $found"
-            echo "exe_path=$found" >> $env:GITHUB_OUTPUT
-          }
-
-      - name: Install WiX 3.11
-        shell: pwsh
-        run: |
-          choco install wix --version=3.11.2 -y
-          $bin = "C:\Program Files (x86)\WiX Toolset v3.11\bin"
-          echo "$bin" >> $env:GITHUB_PATH
-
-      - name: Generate minimal WiX .wxs
-        shell: pwsh
-        run: |
-          $conf = "${{ github.event.inputs.configuration || 'Release' }}"
-          $arch = "${{ github.event.inputs.arch || 'x64' }}"
-          $exe = "${{ steps.locate.outputs.exe_path }}"
-          if (-not (Test-Path $exe)) { Write-Error "Exe not found: $exe" }
-          New-Item -ItemType Directory -Force -Path installer | Out-Null
-          $guidProduct = [System.Guid]::NewGuid().ToString()
-          $guidComponent = [System.Guid]::NewGuid().ToString()
-          $version = "1.0.0.0"
-          $manufacturer = "YourOrg"
-          $name = "ZeroTierOne"
-          $exeName = [System.IO.Path]::GetFileName($exe)
-          $exeDir = [System.IO.Path]::GetDirectoryName($exe)
-
-          $wxs = @"
-<?xml version='1.0' encoding='UTF-8'?>
-<Wix xmlns='http://schemas.microsoft.com/wix/2006/wi'>
-  <Product Id='$guidProduct' Name='$name' Language='1033' Version='$version' Manufacturer='$manufacturer' UpgradeCode='$(guid)'>
-    <Package InstallerVersion='200' Compressed='yes' InstallScope='perMachine' />
-
-    <MediaTemplate />
-
-    <Directory Id='TARGETDIR' Name='SourceDir'>
-      <Directory Id='ProgramFilesFolder'>
-        <Directory Id='INSTALLFOLDER' Name='$name'>
-          <Component Id='MainExe' Guid='$guidComponent'>
-            <File Id='ZeroTierExe' Source='$exe' KeyPath='yes' />
-          </Component>
-        </Directory>
-      </Directory>
-    </Directory>
-
-    <Feature Id='ProductFeature' Title='$name' Level='1'>
-      <ComponentRef Id='MainExe' />
-    </Feature>
-  </Product>
-</Wix>
-"@
-          $wxs | Set-Content -Path installer\installer.wxs -Encoding UTF8
-
-      - name: Package MSI (candle + light)
-        shell: pwsh
-        working-directory: installer
-        run: |
-          candle installer.wxs
-          light installer.wixobj -o ZeroTierOne-${{ github.event.inputs.arch || 'x64' }}.msi
+          candle installer\installer.wxs
+          light installer\installer.wixobj -o ZeroTierOne-x64.msi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ZeroTierOne-${{ github.event.inputs.arch || 'x64' }}-${{ github.event.inputs.configuration || 'Release' }}
+          name: ZeroTierOne-x64
           path: |
-            ${{ steps.locate.outputs.exe_path }}
-            installer/ZeroTierOne-${{ github.event.inputs.arch || 'x64' }}.msi
+            build/Release/zerotier-one.exe
+            ZeroTierOne-x64.msi
