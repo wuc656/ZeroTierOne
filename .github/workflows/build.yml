@@ -37,23 +37,20 @@ jobs:
           & "$env:VCPKG_ROOT\vcpkg.exe" install nlohmann-json:$env:VCPKG_DEFAULT_TRIPLET
           & "$env:VCPKG_ROOT\vcpkg.exe" install prometheus-cpp:$env:VCPKG_DEFAULT_TRIPLET
           $prefix = "C:\vcpkg\installed\x64-windows"
-          if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { throw "nlohmann/json.hpp missing at $prefix\include\nlohmann" }
-          if (!(Test-Path "$prefix\include\prometheus")) { Write-Host "prometheus headers present from vcpkg (standard API)" }
+          if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { throw "nlohmann/json.hpp missing" }
+          if (!(Test-Path "$prefix\include\prometheus")) { Write-Host "prometheus headers present from vcpkg" }
 
       - name: Prepare include/library paths (env + VS globals bases)
         shell: pwsh
         run: |
           $prefix    = "C:\vcpkg\installed\x64-windows"
-          $promBase  = Join-Path "${{ github.workspace }}" "ext\prometheus-cpp-lite-1.0"
+          $promBase  = Join-Path "${{ github.workspace }}" "ext\prometheus-cpp-lite-1.0\simpleapi"
           if (!(Test-Path (Join-Path $promBase "prometheus\simpleapi.h"))) {
             throw "Expected header missing: $promBase\prometheus\simpleapi.h"
           }
 
-          # 編譯器層級保險：讓 cl.exe 在編譯時能找到
           Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$promBase;$prefix\include;$env:INCLUDE"
           Add-Content -Path $env:GITHUB_ENV -Value "LIB=$prefix\lib;$env:LIB"
-
-          # 後續步驟取用
           Add-Content -Path $env:GITHUB_ENV -Value "PROM_BASE=$promBase"
           Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_PREFIX=$prefix"
 
@@ -61,14 +58,8 @@ jobs:
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (!(Test-Path $vswhere)) { throw "vswhere.exe not found at $vswhere" }
-
           $vsPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-          if (-not $vsPath) { throw "No suitable Visual Studio with VC Tools found" }
-
           $devCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
-          if (!(Test-Path $devCmd)) { throw "VsDevCmd.bat not found at $devCmd" }
-
           "VSCMD=$devCmd" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Configure (VS2019, Win7 compatible, Prometheus enabled, via DevCmd)
