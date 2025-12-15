@@ -1,4 +1,4 @@
-name: Build ZeroTier MSI (Win7/2008R2 x64, Prometheus enabled, VS DevCmd)
+name: Build ZeroTier MSI (Win7/2008R2 x64, Prometheus enabled, DevCmd fixed)
 
 on:
   workflow_dispatch:
@@ -40,23 +40,24 @@ jobs:
           if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { throw "nlohmann/json.hpp missing at $prefix\include\nlohmann" }
           if (!(Test-Path "$prefix\include\prometheus")) { Write-Host "prometheus headers present from vcpkg (standard API)" }
 
-      - name: Prepare include/library paths for compiler and VS globals
+      - name: Prepare include/library paths (env + VS globals bases)
         shell: pwsh
         run: |
-          $prefix = "C:\vcpkg\installed\x64-windows"
-          $simpleapi = Join-Path "${{ github.workspace }}" "ext\prometheus-cpp-lite-1.0\simpleapi"
-          if (!(Test-Path $simpleapi)) { throw "Missing ext\prometheus-cpp-lite-1.0\simpleapi at $simpleapi" }
+          $prefix    = "C:\vcpkg\installed\x64-windows"
+          $promBase  = Join-Path "${{ github.workspace }}" "ext\prometheus-cpp-lite-1.0"
+          if (!(Test-Path (Join-Path $promBase "prometheus\simpleapi.h"))) {
+            throw "Expected header missing: $promBase\prometheus\simpleapi.h"
+          }
 
-          # 1) 編譯器層級：讓 cl.exe 在編譯時能找到
-          Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$simpleapi;$prefix\include;$env:INCLUDE"
+          # 編譯器層級保險：讓 cl.exe 在編譯時能找到
+          Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$promBase;$prefix\include;$env:INCLUDE"
           Add-Content -Path $env:GITHUB_ENV -Value "LIB=$prefix\lib;$env:LIB"
 
-          # 2) 後續步驟取用
-          Add-Content -Path $env:GITHUB_ENV -Value "SIMPLEAPI_PATH=$simpleapi"
+          # 後續步驟取用
+          Add-Content -Path $env:GITHUB_ENV -Value "PROM_BASE=$promBase"
           Add-Content -Path $env:GITHUB_ENV -Value "VCPKG_PREFIX=$prefix"
 
       - name: Locate Visual Studio and DevCmd
-        id: vs
         shell: pwsh
         run: |
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -68,27 +69,29 @@ jobs:
           $devCmd = Join-Path $vsPath "Common7\Tools\VsDevCmd.bat"
           if (!(Test-Path $devCmd)) { throw "VsDevCmd.bat not found at $devCmd" }
 
-          Write-Host "VS path: $vsPath"
-          Write-Host "VsDevCmd: $devCmd"
           "VSCMD=$devCmd" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Configure (CMake → VS2019 solution, Win7 compatible, Prometheus enabled, via DevCmd)
+      - name: Configure (VS2019, Win7 compatible, Prometheus enabled, via DevCmd)
         shell: cmd
         run: |
           "%VSCMD%" && ^
           set PREFIX=%VCPKG_PREFIX% && ^
-          set SIMPLEAPI=%SIMPLEAPI_PATH% && ^
-          set EXTRA_CXX_FLAGS=/std:c++17 /Zc:__cplusplus /permissive- && ^
-          set VS_GLOBALS=IncludePath=%SIMPLEAPI%;%PREFIX%\include;%%(IncludePath);LibraryPath=%PREFIX%\lib;%%(LibraryPath) && ^
+          set PROMBASE=%PROM_BASE% && ^
+          set EXTRA_C_FLAGS=/EHsc && ^
+          set EXTRA_CXX_FLAGS=/std:c++17 /Zc:__cplusplus /permissive- /EHsc && ^
+          set VS_GLOBALS=IncludePath=%PROMBASE%;%PREFIX%\include;%%(IncludePath);LibraryPath=%PREFIX%\lib;%%(LibraryPath) && ^
           cmake -S . -B build -G "Visual Studio 16 2019" -A %ARCH% -T v142 ^
             -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake ^
             -DVCPKG_TARGET_TRIPLET=%VCPKG_DEFAULT_TRIPLET% ^
+            -DCMAKE_C_STANDARD=11 ^
+            -DCMAKE_C_STANDARD_REQUIRED=ON ^
             -DCMAKE_CXX_STANDARD=17 ^
             -DCMAKE_CXX_STANDARD_REQUIRED=ON ^
             -DCMAKE_CXX_EXTENSIONS=OFF ^
             -DWINVER=0x0601 ^
             -D_WIN32_WINNT=0x0601 ^
             -DZT_ENABLE_PROMETHEUS=ON ^
+            -DCMAKE_C_FLAGS="%EXTRA_C_FLAGS%" ^
             -DCMAKE_CXX_FLAGS="%EXTRA_CXX_FLAGS%" ^
             -DCMAKE_VS_GLOBALS="%VS_GLOBALS%"
 
