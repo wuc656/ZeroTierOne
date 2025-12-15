@@ -8,8 +8,6 @@ jobs:
     runs-on: windows-2019
 
     env:
-      WINVER: 0x0601
-      WIN32_WINNT: 0x0601
       CONFIGURATION: Release
       ARCH: x64
       VCPKG_ROOT: C:\vcpkg
@@ -22,7 +20,7 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v1.3.1
 
-      - name: Install CMake 3.21
+      - name: Install CMake
         uses: lukka/get-cmake@latest
         with:
           cmakeVersion: 3.21.0
@@ -40,32 +38,13 @@ jobs:
           $prefix = "C:\vcpkg\installed\x64-windows"
           if (!(Test-Path "$prefix\include\nlohmann\json.hpp")) { throw "nlohmann/json.hpp missing at $prefix\include\nlohmann" }
 
-      - name: Persist MSVC INCLUDE/LIB across steps (critical fix)
+      - name: Configure (CMake → VS2019 solution, 官方最小化)
         shell: pwsh
         run: |
-          $prefix = "C:\vcpkg\installed\x64-windows"
-          Add-Content -Path $env:GITHUB_ENV -Value "INCLUDE=$prefix\include;$env:INCLUDE"
-          Add-Content -Path $env:GITHUB_ENV -Value "LIB=$prefix\lib;$env:LIB"
-
-      - name: Configure (CMake → VS2019 solution, robust include flags, hard-disable metrics)
-        shell: pwsh
-        run: |
-          $prefix = "C:/vcpkg/installed/x64-windows"
-          $inc = "/I `"$prefix/include`" /EHsc /D NOMINMAX /D ZT_ENABLE_PROMETHEUS=0 /D ZT_ENABLE_METRICS=0 /D ZT_PROMETHEUS=0"
           cmake -S . -B build -G "Visual Studio 16 2019" -A $env:ARCH -T v142 `
-            -DWINVER=$env:WINVER -D_WIN32_WINNT=$env:WIN32_WINNT `
             -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
             -DVCPKG_TARGET_TRIPLET=$env:VCPKG_DEFAULT_TRIPLET `
-            -DCMAKE_PREFIX_PATH=$prefix `
-            -DCMAKE_INCLUDE_PATH=$prefix/include `
-            -DCMAKE_LIBRARY_PATH=$prefix/lib `
-            -DCMAKE_CXX_STANDARD=17 `
-            -DCMAKE_C_FLAGS="$inc" `
-            -DCMAKE_CXX_FLAGS="$inc" `
-            -DCMAKE_C_FLAGS_RELEASE="$inc" `
-            -DCMAKE_CXX_FLAGS_RELEASE="$inc" `
-            -DCMAKE_C_FLAGS_DEBUG="$inc" `
-            -DCMAKE_CXX_FLAGS_DEBUG="$inc"
+            -DCMAKE_CXX_STANDARD=17
 
       - name: Build (cmake --build)
         shell: pwsh
