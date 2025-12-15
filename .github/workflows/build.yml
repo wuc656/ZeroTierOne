@@ -18,7 +18,6 @@ jobs:
       ARCH: x64
       VCPKG_ROOT: C:\vcpkg
       VCPKG_DEFAULT_TRIPLET: x64-windows
-      ZT_ENABLE_PROMETHEUS: OFF  # 先關掉 Prometheus 指標路徑，避免 Windows 上不必要的複雜性
 
     steps:
       - name: Checkout
@@ -32,34 +31,41 @@ jobs:
         with:
           cmakeVersion: 3.21.0
 
-      - name: Install vcpkg
+      - name: Install vcpkg (bootstrap)
         shell: pwsh
         run: |
           git clone https://github.com/microsoft/vcpkg $env:VCPKG_ROOT
           & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat"
+          # Export triplet for consistency
+          [Environment]::SetEnvironmentVariable('VCPKG_DEFAULT_TRIPLET', $env:VCPKG_DEFAULT_TRIPLET, 'Process')
 
       - name: Install dependencies via vcpkg
         shell: pwsh
         run: |
           & "$env:VCPKG_ROOT\vcpkg.exe" install nlohmann-json:$env:VCPKG_DEFAULT_TRIPLET
-          if ($env:ZT_ENABLE_PROMETHEUS -eq "ON") {
-            & "$env:VCPKG_ROOT\vcpkg.exe" install prometheus-cpp:$env:VCPKG_DEFAULT_TRIPLET
-          }
+          # If you need metrics, uncomment the next line; otherwise we disable prometheus in CMake below
+          # & "$env:VCPKG_ROOT\vcpkg.exe" install prometheus-cpp:$env:VCPKG_DEFAULT_TRIPLET
 
       - name: Configure (CMake → VS2019 solution)
         shell: pwsh
         run: |
-          $toolchain = "C:/vcpkg/scripts/buildsystems/vcpkg.cmake"
-          $prom = if ($env:ZT_ENABLE_PROMETHEUS -eq "ON") { "ON" } else { "OFF" }
           cmake -S . -B build -G "Visual Studio 16 2019" -A $env:ARCH -T v142 `
             -DWINVER=$env:WINVER -D_WIN32_WINNT=$env:WIN32_WINNT `
-            -DCMAKE_TOOLCHAIN_FILE=$toolchain `
+            -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake `
             -DCMAKE_CXX_STANDARD=17 `
-            -DZT_ENABLE_PROMETHEUS=$prom
+            -DCMAKE_CXX_FLAGS="/D NOMINMAX" `
+            -DZT_ENABLE_PROMETHEUS=OFF
 
       - name: Build (cmake --build)
         shell: pwsh
         run: cmake --build build --config $env:CONFIGURATION --parallel
+
+      - name: Verify output
+        shell: pwsh
+        run: |
+          if (!(Test-Path "build\Release\zerotier-one.exe")) {
+            Write-Error "zerotier-one.exe not found after build."
+          }
 
       - name: Install WiX Toolset
         shell: pwsh
@@ -69,27 +75,28 @@ jobs:
         shell: pwsh
         run: |
           $exePath = "build\Release\zerotier-one.exe"
-          $lines = @()
-          $lines += '<?xml version="1.0" encoding="UTF-8"?>'
-          $lines += '<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">'
-          $lines += '  <Product Id="*" Name="ZeroTierOne" Language="1033" Version="1.0.0.0" Manufacturer="YourOrg" UpgradeCode="11111111-2222-3333-4444-555555555555">'
-          $lines += '    <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />'
-          $lines += '    <MediaTemplate />'
-          $lines += '    <Directory Id="TARGETDIR" Name="SourceDir">'
-          $lines += '      <Directory Id="ProgramFiles64Folder">'
-          $lines += '        <Directory Id="INSTALLFOLDER" Name="ZeroTierOne">'
-          $lines += '          <Component Id="MainExe" Guid="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee">'
-          $lines += "            <File Id='ZeroTierExe' Source='$exePath' KeyPath='yes' />"
-          $lines += '          </Component>'
-          $lines += '        </Directory>'
-          $lines += '      </Directory>'
-          $lines += '    </Directory>'
-          $lines += '    <Feature Id="ProductFeature" Title="ZeroTierOne" Level="1">'
-          $lines += '      <ComponentRef Id="MainExe" />'
-          $lines += '    </Feature>'
-          $lines += '  </Product>'
-          $lines += '</Wix>'
           New-Item -ItemType Directory -Force -Path installer | Out-Null
+          $lines = @(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">'
+            '  <Product Id="*" Name="ZeroTierOne" Language="1033" Version="1.0.0.0" Manufacturer="YourOrg" UpgradeCode="11111111-2222-3333-4444-555555555555">'
+            '    <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />'
+            '    <MediaTemplate />'
+            '    <Directory Id="TARGETDIR" Name="SourceDir">'
+            '      <Directory Id="ProgramFiles64Folder">'
+            '        <Directory Id="INSTALLFOLDER" Name="ZeroTierOne">'
+            '          <Component Id="MainExe" Guid="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee">'
+            "            <File Id='ZeroTierExe' Source='$exePath' KeyPath='yes' />"
+            '          </Component>'
+            '        </Directory>'
+            '      </Directory>'
+            '    </Directory>'
+            '    <Feature Id="ProductFeature" Title="ZeroTierOne" Level="1">'
+            '      <ComponentRef Id="MainExe" />'
+            '    </Feature>'
+            '  </Product>'
+            '</Wix>'
+          )
           $lines | Set-Content -Path installer\installer.wxs -Encoding UTF8
 
       - name: Package MSI
